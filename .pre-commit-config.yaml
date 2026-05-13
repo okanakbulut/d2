@@ -1,0 +1,9 @@
+repos:
+  - repo: local
+    hooks:
+      - id: pyright
+        name: pyright
+        entry: uv run pyright norm/
+        language: system
+        pass_filenames: false
+        always_run: true

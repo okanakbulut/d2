@@ -4,11 +4,35 @@ import typing
 from typing import Any, ClassVar, Generic, TYPE_CHECKING, TypeVar, cast, overload
 
 import pypika
+import pypika.terms
+from pypika.utils import format_alias_sql, format_quotes
 
 from .model import FieldDef, TableMeta
 
 if TYPE_CHECKING:
-    from .query import QueryBuilder
+    from .filter import Filter
+    from .query import InsertQuery, QueryBuilder
+
+
+class _NamespacedField(pypika.terms.Field):
+    """pypika Field that always renders as [schema.]table.column."""
+
+    def get_sql(self, **kwargs: Any) -> str:
+        with_alias = kwargs.pop("with_alias", False)
+        kwargs.pop("with_namespace", None)
+        quote_char = kwargs.pop("quote_char", None)
+
+        field_sql = format_quotes(self.name, quote_char)
+
+        if self.table:
+            tbl = cast(pypika.Table, self.table)
+            table_sql = format_quotes(tbl.get_table_name(), quote_char)
+            field_sql = f"{table_sql}.{field_sql}"
+
+        field_alias = getattr(self, "alias", None)
+        if with_alias:
+            return format_alias_sql(field_sql, field_alias, quote_char=quote_char, **kwargs)
+        return field_sql
 
 T = TypeVar("T")
 
@@ -38,9 +62,82 @@ class Field(Generic[T]):
     def __get__(self, obj: Any, objtype: Any = None) -> Any:
         return self
 
-    def __eq__(self, other: Any) -> Any:
+    def __eq__(self, other: Any) -> "Filter":  # type: ignore[override]
         from .filter import Filter
+        if isinstance(other, Field):
+            return Filter(field=self, value=other, op="col_eq")
         return Filter(field=self, value=other)
+
+    def __ne__(self, other: Any) -> "Filter":  # type: ignore[override]
+        from .filter import Filter
+        return Filter(field=self, value=other, op="ne")
+
+    def __lt__(self, other: Any) -> "Filter":
+        from .filter import Filter
+        return Filter(field=self, value=other, op="lt")
+
+    def __le__(self, other: Any) -> "Filter":
+        from .filter import Filter
+        return Filter(field=self, value=other, op="lte")
+
+    def __gt__(self, other: Any) -> "Filter":
+        from .filter import Filter
+        return Filter(field=self, value=other, op="gt")
+
+    def __ge__(self, other: Any) -> "Filter":
+        from .filter import Filter
+        return Filter(field=self, value=other, op="gte")
+
+    def like(self, pattern: str) -> "Filter":
+        from .filter import Filter
+        return Filter(field=self, value=pattern, op="like")
+
+    def ilike(self, pattern: str) -> "Filter":
+        from .filter import Filter
+        return Filter(field=self, value=pattern, op="ilike")
+
+    def isin(self, values: list[Any]) -> "Filter":
+        from .filter import Filter
+        return Filter(field=self, value=tuple(values), op="in")
+
+    def notin(self, values: list[Any]) -> "Filter":
+        from .filter import Filter
+        return Filter(field=self, value=tuple(values), op="notin")
+
+    def isnull(self) -> "Filter":
+        from .filter import Filter
+        return Filter(field=self, value=None, op="null")
+
+    def isnotnull(self) -> "Filter":
+        from .filter import Filter
+        return Filter(field=self, value=None, op="notnull")
+
+    def between(self, lo: Any, hi: Any) -> "Filter":
+        from .filter import Filter
+        return Filter(field=self, value=(lo, hi), op="between")
+
+    def as_(self, alias: str) -> "Field[T]":
+        new = cast("Field[T]", Field.__new__(Field))
+        object.__setattr__(new, "column_name", self.column_name)
+        object.__setattr__(new, "python_type", self.python_type)
+        object.__setattr__(new, "field_def", self.field_def)
+        object.__setattr__(new, "pika_field", self.pika_field.as_(alias))
+        return new
+
+    def to_column(self, params: list[Any], dialect: Any) -> Any:
+        return self.pika_field
+
+    def __add__(self, other: Any) -> "Field[Any]":
+        return _arith_field(self, "+", other)
+
+    def __sub__(self, other: Any) -> "Field[Any]":
+        return _arith_field(self, "-", other)
+
+    def __mul__(self, other: Any) -> "Field[Any]":
+        return _arith_field(self, "*", other)
+
+    def __truediv__(self, other: Any) -> "Field[Any]":
+        return _arith_field(self, "/", other)
 
     def __hash__(self) -> int:
         return hash(self.column_name)
@@ -50,6 +147,34 @@ class Field(Generic[T]):
 
     def __setattr__(self, name: str, value: Any) -> None:  # type: ignore[override]
         raise AttributeError(f"cannot set '{name}' on {type(self).__name__}")
+
+
+class _ArithField(Field[Any]):
+    def __init__(self, left: "Field[Any]", op: str, right: Any) -> None:
+        object.__setattr__(self, "column_name", left.column_name)
+        object.__setattr__(self, "python_type", left.python_type)
+        object.__setattr__(self, "field_def", left.field_def)
+        object.__setattr__(self, "pika_field", left.pika_field)
+        object.__setattr__(self, "_left", left)
+        object.__setattr__(self, "_op", op)
+        object.__setattr__(self, "_right", right)
+
+    def to_column(self, params: list[Any], dialect: Any) -> Any:
+        left_term = self._left.to_column(params, dialect)  # type: ignore[attr-defined]
+        right = self._right  # type: ignore[attr-defined]
+        op = self._op  # type: ignore[attr-defined]
+        if isinstance(right, Field):
+            right_term = right.pika_field
+        else:
+            params.append(right)
+            right_term = pypika.terms.Parameter(dialect.placeholder(len(params)))
+        ops: dict[str, Any] = {"+": left_term + right_term, "-": left_term - right_term,
+                               "*": left_term * right_term, "/": left_term / right_term}
+        return ops[op]
+
+
+def _arith_field(left: "Field[Any]", op: str, right: Any) -> "_ArithField":
+    return _ArithField(left, op, right)
 
 
 Column = Field  # alias
@@ -145,7 +270,7 @@ def _setup_table(cls: type) -> None:
 
     for attr_name, python_type, fd, field_cls in fields:
         col_name = fd.name if fd.name else attr_name
-        proxy = field_cls(col_name, python_type, fd, pika_table[col_name])
+        proxy = field_cls(col_name, python_type, fd, _NamespacedField(col_name, table=pika_table))
         setattr(cls, attr_name, proxy)
         field_proxies.append(proxy)
 
@@ -174,22 +299,22 @@ class Selectable(metaclass=NormMeta):
     @classmethod
     def select(cls, *proxies: "Field[Any]") -> "QueryBuilder":
         from .query import QueryBuilder
-        return QueryBuilder(
-            source=cls.__table__,
-            columns=tuple(p.pika_field for p in proxies),
-        )
+        return QueryBuilder(source=cls.__table__, columns=proxies)
 
     @classmethod
     def select_all(cls) -> "QueryBuilder":
         from .query import QueryBuilder
-        return QueryBuilder(
-            source=cls.__table__,
-            columns=tuple(p.pika_field for p in cls.__fields__),
-        )
+        return QueryBuilder(source=cls.__table__, columns=cls.__fields__)
 
 
 class Table(Selectable):
     """Writable database table."""
+
+    @classmethod
+    def insert(cls, data: "dict[str, Any] | list[dict[str, Any]]") -> "InsertQuery":
+        from .query import InsertQuery
+        rows = (data,) if isinstance(data, dict) else tuple(data)
+        return InsertQuery(source=cls.__table__, rows=rows)
 
 
 class View(Selectable):

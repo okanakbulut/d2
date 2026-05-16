@@ -4,6 +4,7 @@ import typing
 from typing import Any, ClassVar, Generic, TYPE_CHECKING, TypeVar, cast, overload
 
 import pypika
+import pypika.functions
 import pypika.terms
 from pypika.utils import format_alias_sql, format_quotes
 
@@ -11,11 +12,11 @@ from .model import FieldDef, TableMeta
 
 if TYPE_CHECKING:
     from .filter import Filter
-    from .query import InsertQuery, QueryBuilder
+    from .query import InsertQuery, QueryBuilder, UpdateQuery, DeleteQuery
 
 
-class _NamespacedField(pypika.terms.Field):
-    """pypika Field that always renders as [schema.]table.column."""
+class NamespacedField(pypika.terms.Field):
+    """pypika Field that always renders as [alias_or_table].column."""
 
     def get_sql(self, **kwargs: Any) -> str:
         with_alias = kwargs.pop("with_alias", False)
@@ -26,7 +27,8 @@ class _NamespacedField(pypika.terms.Field):
 
         if self.table:
             tbl = cast(pypika.Table, self.table)
-            table_sql = format_quotes(tbl.get_table_name(), quote_char)
+            ref_name = getattr(tbl, "alias", None) or tbl.get_table_name()
+            table_sql = format_quotes(ref_name, quote_char)
             field_sql = f"{table_sql}.{field_sql}"
 
         field_alias = getattr(self, "alias", None)
@@ -35,18 +37,19 @@ class _NamespacedField(pypika.terms.Field):
         return field_sql
 
 T = TypeVar("T")
+_EntityT = TypeVar("_EntityT", bound="Entity")
 
 
 class Field(Generic[T]):
     column_name: str
-    python_type: type
+    python_type: type[T]
     field_def: FieldDef
     pika_field: pypika.Field
 
     def __init__(
         self,
         column_name: str,
-        python_type: type,
+        python_type: type[T],
         field_def: FieldDef,
         pika_field: pypika.Field,
     ) -> None:
@@ -124,6 +127,30 @@ class Field(Generic[T]):
         object.__setattr__(new, "pika_field", self.pika_field.as_(alias))
         return new
 
+    def count(self, distinct: bool = False) -> "Field[int]":
+        term = pypika.functions.Count(self.pika_field)
+        if distinct:
+            term = term.distinct()
+        return _AggField(int, term)
+
+    def sum(self) -> "Field[T]":
+        return _AggField(self.python_type, pypika.functions.Sum(self.pika_field))
+
+    def min(self) -> "Field[T]":
+        return _AggField(self.python_type, pypika.functions.Min(self.pika_field))
+
+    def max(self) -> "Field[T]":
+        return _AggField(self.python_type, pypika.functions.Max(self.pika_field))
+
+    def avg(self) -> "Field[float]":
+        return _AggField(float, pypika.functions.Avg(self.pika_field))
+
+    def coalesce(self, default: Any) -> "Field[T]":
+        return _CoalesceField(self, default)
+
+    def cast(self, sql_type: str) -> "Field[Any]":
+        return _AggField(type(None), pypika.functions.Cast(self.pika_field, sql_type))
+
     def to_column(self, params: list[Any], dialect: Any) -> Any:
         return self.pika_field
 
@@ -175,6 +202,53 @@ class _ArithField(Field[Any]):
 
 def _arith_field(left: "Field[Any]", op: str, right: Any) -> "_ArithField":
     return _ArithField(left, op, right)
+
+
+class _AggField(Field[T]):
+    """A Field backed by a pypika aggregate (or scalar) term."""
+
+    def __init__(self, python_type: type[T], pika_term: pypika.terms.Term) -> None:
+        object.__setattr__(self, "column_name", "")
+        object.__setattr__(self, "python_type", python_type)
+        object.__setattr__(self, "field_def", FieldDef())
+        object.__setattr__(self, "pika_field", pika_term)
+
+    def to_column(self, params: list[Any], dialect: Any) -> Any:
+        return self.pika_field
+
+    def as_(self, alias: str) -> "Field[T]":
+        return _AggField(self.python_type, self.pika_field.as_(alias))
+
+
+class _CoalesceField(Field[T]):
+    """COALESCE(col, default) — default is bound as a parameter at build time."""
+
+    _source: "Field[T]"
+    _default: Any
+
+    def __init__(self, source: "Field[T]", default: Any) -> None:
+        object.__setattr__(self, "column_name", source.column_name)
+        object.__setattr__(self, "python_type", source.python_type)
+        object.__setattr__(self, "field_def", source.field_def)
+        object.__setattr__(self, "pika_field", source.pika_field)
+        object.__setattr__(self, "_source", source)
+        object.__setattr__(self, "_default", default)
+
+    def as_(self, alias: str) -> "Field[T]":
+        source: Field[T] = object.__getattribute__(self, "_source")
+        default: Any = object.__getattribute__(self, "_default")
+        new = _CoalesceField(source, default)
+        object.__setattr__(new, "_alias", alias)
+        return new
+
+    def to_column(self, params: list[Any], dialect: Any) -> Any:  # type: ignore[override]
+        params.append(self._default)  # type: ignore[attr-defined]
+        default_term = pypika.terms.Parameter(dialect.placeholder(len(params)))
+        term = pypika.functions.Coalesce(self._source.pika_field, default_term)  # type: ignore[attr-defined]
+        alias = getattr(self, "_alias", None)
+        if alias:
+            return term.as_(alias)
+        return term
 
 
 Column = Field  # alias
@@ -270,7 +344,7 @@ def _setup_table(cls: type) -> None:
 
     for attr_name, python_type, fd, field_cls in fields:
         col_name = fd.name if fd.name else attr_name
-        proxy = field_cls(col_name, python_type, fd, _NamespacedField(col_name, table=pika_table))
+        proxy = field_cls(col_name, python_type, fd, NamespacedField(col_name, table=pika_table))
         setattr(cls, attr_name, proxy)
         field_proxies.append(proxy)
 
@@ -292,9 +366,50 @@ class NormMeta(type):
         return cls
 
 
-class Selectable(metaclass=NormMeta):
+class Entity(metaclass=NormMeta):
+    """Base for all norm-managed database objects. Do not use directly — subclass Table or View."""
+
     __table__: ClassVar[pypika.Table]
     __fields__: ClassVar[tuple[Field[Any], ...]]
+
+    @classmethod
+    def aliased(cls: "type[_EntityT]", alias: str) -> "type[_EntityT]":
+        orig_table: pypika.Table = cls.__table__
+        real_name: str = orig_table._table_name  # type: ignore[attr-defined]
+        schema_obj = orig_table._schema  # type: ignore[attr-defined]
+
+        pika_table = pypika.Table(real_name, schema=schema_obj).as_(alias)  # type: ignore[reportUnknownArgumentType, reportArgumentType]
+
+        field_overrides: dict[str, Any] = {}
+        new_fields: list[Field[Any]] = []
+        for attr_name, value in vars(cls).items():
+            if isinstance(value, Field):
+                new_pika = NamespacedField(value.column_name, table=pika_table)
+                new_proxy: Field[Any] = type(value)(value.column_name, value.python_type, value.field_def, new_pika)  # type: ignore[reportUnknownMemberType]
+                field_overrides[attr_name] = new_proxy
+                new_fields.append(new_proxy)
+
+        ns: dict[str, Any] = {
+            "__table__": pika_table,
+            "__fields__": tuple(new_fields),
+            **field_overrides,
+        }
+        proxy = type.__new__(type, cls.__name__, (object,), ns)
+        proxy.select = classmethod(  # type: ignore[attr-defined]
+            lambda c, *proxies: __import__("norm.query", fromlist=["QueryBuilder"]).QueryBuilder(
+                source=c.__table__, columns=proxies  # type: ignore[attr-defined]
+            )
+        )
+        proxy.select_all = classmethod(  # type: ignore[attr-defined]
+            lambda c: __import__("norm.query", fromlist=["QueryBuilder"]).QueryBuilder(
+                source=c.__table__, columns=c.__fields__  # type: ignore[attr-defined]
+            )
+        )
+        return proxy  # type: ignore[return-value]
+
+
+class Selectable(Entity):
+    """Mixin that adds SELECT capability. Inherit via Table or View, not directly."""
 
     @classmethod
     def select(cls, *proxies: "Field[Any]") -> "QueryBuilder":
@@ -307,15 +422,51 @@ class Selectable(metaclass=NormMeta):
         return QueryBuilder(source=cls.__table__, columns=cls.__fields__)
 
 
-class Table(Selectable):
-    """Writable database table."""
+class Writable(Entity):
+    """Mixin that adds INSERT/UPDATE/DELETE capability. Inherit via Table, not directly."""
 
     @classmethod
-    def insert(cls, data: "dict[str, Any] | list[dict[str, Any]]") -> "InsertQuery":
+    def _default_columns(cls) -> "frozenset[str]":
+        return frozenset(
+            f.column_name for f in cls.__fields__
+            if f.field_def.db_default or f.field_def.primary_key
+        )
+
+    @classmethod
+    def insert(cls, rows: "list[dict[str, Any]] | None" = None, *, exclude_defaults: bool = True, **kwargs: Any) -> "InsertQuery":
         from .query import InsertQuery
-        rows = (data,) if isinstance(data, dict) else tuple(data)
-        return InsertQuery(source=cls.__table__, rows=rows)
+        excluded = cls._default_columns() if exclude_defaults else frozenset[str]()
+        if rows is not None:
+            if not rows:
+                raise ValueError("insert requires at least one row")
+            filtered = [{k: v for k, v in row.items() if k not in excluded} for row in rows]
+            first_cols = set(filtered[0].keys())
+            if any(set(r.keys()) != first_cols for r in filtered[1:]):
+                raise ValueError("all rows must have a consistent set of columns")
+            return InsertQuery(source=cls.__table__, rows=tuple(filtered), is_many=True)
+        row = {k: v for k, v in kwargs.items() if k not in excluded}
+        return InsertQuery(source=cls.__table__, rows=(row,), is_many=False)
+
+    @classmethod
+    def update(cls, **assignments: Any) -> "UpdateQuery":
+        from .query import UpdateQuery
+        col_assignments = tuple(
+            (getattr(cls, attr).column_name, value)
+            for attr, value in assignments.items()
+        )
+        return UpdateQuery(source=cls.__table__, assignments=col_assignments)
+
+    @classmethod
+    def delete(cls) -> "DeleteQuery":
+        from .query import DeleteQuery
+        return DeleteQuery(source=cls.__table__)
+
+
+class Table(Selectable, Writable):
+    """Readable and writable database table."""
 
 
 class View(Selectable):
-    """Read-only table or subquery."""
+    """Read-only database view or table."""
+
+

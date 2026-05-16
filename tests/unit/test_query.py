@@ -166,15 +166,54 @@ class TestArithmeticExpressions:
 
 
 class TestInsert:
-    def test_insert_single_row(self):
-        sql, params = Users.insert({"name": "Alice", "email": "a@x.com"}).build()
+    def test_insert_kwargs(self):
+        sql, params = Users.insert(name="Alice", email="a@x.com").build()
         assert sql == 'INSERT INTO "public"."users" ("name","email") VALUES ($1,$2)'
         assert params == ("Alice", "a@x.com")
 
-    def test_insert_multi_row(self):
+    def test_insert_drops_pk_and_db_default_by_default(self):
+        sql, params = Users.insert(id=99, name="Alice", email="a@x.com").build()
+        assert sql == 'INSERT INTO "public"."users" ("name","email") VALUES ($1,$2)'
+        assert params == ("Alice", "a@x.com")
+
+    def test_insert_exclude_defaults_false_keeps_pk(self):
+        sql, params = Users.insert(id=99, name="Alice", email="a@x.com", exclude_defaults=False).build()
+        assert sql == 'INSERT INTO "public"."users" ("id","name","email") VALUES ($1,$2,$3)'
+        assert params == (99, "Alice", "a@x.com")
+
+    def test_insert_bulk(self):
         sql, params = Users.insert([
             {"name": "Alice", "email": "a@x.com"},
             {"name": "Bob",   "email": "b@x.com"},
         ]).build()
         assert sql == 'INSERT INTO "public"."users" ("name","email") VALUES ($1,$2)'
         assert params == [("Alice", "a@x.com"), ("Bob", "b@x.com")]
+
+    def test_insert_bulk_empty_raises(self):
+        with pytest.raises(ValueError, match="at least one row"):
+            Users.insert([])
+
+    def test_insert_bulk_inconsistent_columns_raises(self):
+        with pytest.raises(ValueError, match="consistent"):
+            Users.insert([
+                {"name": "Alice", "email": "a@x.com"},
+                {"name": "Bob"},
+            ])
+
+    def test_insert_returning(self):
+        sql, params = Users.insert(name="Alice", email="a@x.com").returning(Users.id).build()
+        assert sql == 'INSERT INTO "public"."users" ("name","email") VALUES ($1,$2) RETURNING "users"."id"'
+        assert params == ("Alice", "a@x.com")
+
+    def test_insert_returning_multiple_fields(self):
+        sql, params = Users.insert(name="Alice", email="a@x.com").returning(Users.id, Users.name).build()
+        assert sql == 'INSERT INTO "public"."users" ("name","email") VALUES ($1,$2) RETURNING "users"."id","users"."name"'
+        assert params == ("Alice", "a@x.com")
+
+    def test_insert_returning_is_immutable(self):
+        base = Users.insert(name="Alice", email="a@x.com")
+        with_returning = base.returning(Users.id)
+        base_sql, _ = base.build()
+        returning_sql, _ = with_returning.build()
+        assert base_sql == 'INSERT INTO "public"."users" ("name","email") VALUES ($1,$2)'
+        assert returning_sql == 'INSERT INTO "public"."users" ("name","email") VALUES ($1,$2) RETURNING "users"."id"'

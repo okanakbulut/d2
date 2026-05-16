@@ -5,11 +5,13 @@ from .schema import (
     PrimaryKey,
     Unique,
     Index,
+    Entity,
     Selectable,
+    Writable,
     Table,
     View,
 )
-from .query import QueryBuilder
+from .query import QueryBuilder, With
 from .dialect import Dialect, PostgresDialect
 from .connection import AsyncConnection
 
@@ -22,10 +24,13 @@ __all__ = [
     "PrimaryKey",
     "Unique",
     "Index",
+    "Entity",
     "Selectable",
+    "Writable",
     "Table",
     "View",
     "QueryBuilder",
+    "With",
     "Dialect",
     "PostgresDialect",
     "AsyncConnection",

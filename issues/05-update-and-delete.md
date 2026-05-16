@@ -5,9 +5,11 @@ Type: AFK
 
 ## What to build
 
-Support typed UPDATE statements and DELETE statements, both composable with `.where(...)` from the QueryBuilder layer. UPDATE assignments must use the typed `FieldProxy.set(...)` API — no string column names — and must support arithmetic expressions on the right-hand side (e.g. `col.set(col + 1)`) using the arithmetic operators from slice 02.
+Support typed UPDATE statements and DELETE statements, both composable with `.where(...)` from the QueryBuilder layer. UPDATE assignments use `**kwargs` (bare attribute names as keys, values as literals or arithmetic expressions) — the same convention as `insert`. This means no `FieldProxy.set(...)` API; the right-hand side may be a literal (bound as parameter) or a `Field` / arithmetic expression (rendered inline).
 
-Partial update from a patch dict is **not** part of this slice — it ships separately as `15-patch-dict-update-helper.md`. In this slice, the caller writes one `col.set(value)` per assignment explicitly.
+Partial update from a patch dict is **not** part of this slice — it ships separately as `15-patch-dict-update-helper.md`. In this slice, the caller writes one kwarg per assignment explicitly.
+
+> **Known limitation (shared with `insert`):** if a field declares a custom column name via `FieldDef(name=...)`, the kwarg key must match the Python attribute name, not the column name override. Fixing this uniformly across `insert` and `update` is deferred.
 
 ### Usage example
 
@@ -16,8 +18,8 @@ Partial update from a patch dict is **not** part of this slice — it ships sepa
 q = (
     Users
     .update(
-        Users.age.set(Users.age + 1),         # col = col + 1
-        Users.name.set("Veteran"),            # col = literal
+        age=Users.age + 1,   # col = col + 1
+        name="Veteran",      # col = literal
     )
     .where(Users.age >= 65)
 )
@@ -33,11 +35,10 @@ await conn.execute(q)
 
 ## Acceptance criteria
 
-- [ ] `FieldProxy.set(value)` returns an `Assignment`-like value object; `value` may be a literal (bound as parameter) or another `FieldProxy` / arithmetic expression (rendered inline)
-- [ ] `_TableProxy.update(*assignments)` returns a `QueryBuilder` composable with `.where(...)`
-- [ ] `_TableProxy.delete()` returns a `QueryBuilder` composable with `.where(...)`
+- [ ] `Table.update(**assignments)` accepts bare attribute-name keys; values may be literals or `Field`/arithmetic expressions; returns a `QueryBuilder` composable with `.where(...)`
+- [ ] `Table.delete()` returns a `QueryBuilder` composable with `.where(...)`
 - [ ] Both UPDATE and DELETE participate in the standard `(sql, params)` build path
-- [ ] Arithmetic expressions in `set(...)` use the operators introduced in slice 02 — literal operands bind as parameters; column operands render inline
+- [ ] Arithmetic expression values use the operators from slice 02 — literal operands bind as parameters; column operands render inline
 - [ ] Unit tests cover: literal SET, arithmetic SET, multi-column SET, UPDATE with WHERE, DELETE with WHERE
 - [ ] End-to-end integration test against real PostgreSQL: seed rows, UPDATE a subset, DELETE another subset, verify the resulting state with SELECT
 

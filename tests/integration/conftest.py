@@ -1,11 +1,9 @@
 """Shared fixtures and models for integration tests."""
 
-import os
-from typing import Any, AsyncGenerator
+import os, typing
 
-import pytest
-import asyncpg  # type: ignore[import-untyped]
-import msgspec
+import pytest, msgspec, asyncpg
+
 
 from norm import TableMeta, Table, PrimaryKey, Unique, Field, field
 
@@ -13,10 +11,10 @@ PG_DSN = os.getenv("NORM_TEST_DSN", "postgresql://norm:norm@localhost:5432/norm_
 
 
 @pytest.fixture(scope="session")
-async def pg_conn() -> AsyncGenerator[Any, None]:
-    conn: Any = await asyncpg.connect(PG_DSN)
+async def pg_conn() -> typing.AsyncGenerator[asyncpg.Connection, None]:
+    conn = typing.cast(asyncpg.Connection, await asyncpg.connect(PG_DSN)) # type: ignore[reportUnknownMemberType]
     yield conn
-    await conn.close()
+    await conn.close() # type: ignore[reportUnknownMemberType]
 
 
 class Accounts(Table):

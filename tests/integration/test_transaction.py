@@ -24,8 +24,8 @@ async def test_transaction_commit(pg_conn: Any) -> None:
 
     conn = AsyncConnection(pg_conn)
     async with conn.transaction():
-        await conn.execute(TxnAccounts.insert({"name": "Alice", "email": "alice@txn.com"}))
-        await conn.execute(TxnAccounts.insert({"name": "Bob",   "email": "bob@txn.com"}))
+        await conn.execute(TxnAccounts.insert(name="Alice", email="alice@txn.com"))
+        await conn.execute(TxnAccounts.insert(name="Bob",   email="bob@txn.com"))
 
     rows = await pg_conn.fetch("SELECT name FROM public.txn_accounts ORDER BY name")
     assert [r["name"] for r in rows] == ["Alice", "Bob"]
@@ -47,7 +47,7 @@ async def test_transaction_rollback_on_exception(pg_conn: Any) -> None:
     conn = AsyncConnection(pg_conn)
     try:
         async with conn.transaction():
-            await conn.execute(TxnAccounts.insert({"name": "Charlie", "email": "charlie@txn.com"}))
+            await conn.execute(TxnAccounts.insert(name="Charlie", email="charlie@txn.com"))
             raise RuntimeError("abort")
     except RuntimeError:
         pass

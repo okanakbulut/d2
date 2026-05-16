@@ -41,7 +41,7 @@ async def test_select_round_trip(pg_conn: Any) -> None:
     )
 
     conn = AsyncConnection(pg_conn)
-    results: list[AccountResult] = await conn.fetch(q, AccountResult)
+    results = await conn.fetch(q, list[AccountResult])
 
     assert len(results) == 1
     assert results[0].name == "Alice"
@@ -64,7 +64,7 @@ async def test_predicates_ordering_aliasing(pg_conn: Any) -> None:
     )
 
     conn = AsyncConnection(pg_conn)
-    results: list[AccountSummary] = await conn.fetch(q, AccountSummary)
+    results = await conn.fetch(q, list[AccountSummary])
 
     assert len(results) == 1
     assert results[0].display_name == "Alice"

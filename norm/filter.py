@@ -14,11 +14,33 @@ class Filter:
     value: Any
     op: str = dc_field(default="eq")
 
+    def __and__(self, other: "Filter | CompoundFilter") -> "CompoundFilter":
+        return CompoundFilter(left=self, right=other, op="and")
+
+    def __or__(self, other: "Filter | CompoundFilter") -> "CompoundFilter":
+        return CompoundFilter(left=self, right=other, op="or")
+
     def to_pypika(self, params: list[Any], dialect: Any) -> pypika.terms.Criterion:
+        from .query import ScalarSubquery
+
         col = self.field.pika_field
 
+        if isinstance(self.value, ScalarSubquery):
+            inner_pika = self.value.inner.as_pypika(params, dialect)
+            ops = {
+                "eq": col == inner_pika,
+                "ne": col != inner_pika,
+                "lt": col < inner_pika,
+                "lte": col <= inner_pika,
+                "gt": col > inner_pika,
+                "gte": col >= inner_pika,
+            }
+            if self.op not in ops:
+                raise ValueError(f"op {self.op!r} not supported with scalar subquery")
+            return ops[self.op]
+
         if self.op == "col_eq":
-            return col == self.value.pika_field  # type: ignore[union-attr]
+            return col == self.value.pika_field
 
         if self.op == "eq":
             params.append(self.value)
@@ -76,3 +98,26 @@ class Filter:
             return col.notin(placeholders)
 
         raise ValueError(f"unknown filter op: {self.op!r}")
+
+
+@dataclass(frozen=True)
+class CompoundFilter:
+    left: "Filter | CompoundFilter"
+    right: "Filter | CompoundFilter"
+    op: str  # "and" | "or"
+
+    def __and__(self, other: "Filter | CompoundFilter") -> "CompoundFilter":
+        return CompoundFilter(left=self, right=other, op="and")
+
+    def __or__(self, other: "Filter | CompoundFilter") -> "CompoundFilter":
+        return CompoundFilter(left=self, right=other, op="or")
+
+    def to_pypika(self, params: list[Any], dialect: Any) -> pypika.terms.Criterion:
+        l = self.left.to_pypika(params, dialect)
+        r = self.right.to_pypika(params, dialect)
+        if self.op == "and":
+            return l & r
+        return l | r
+
+
+AnyFilter = Filter | CompoundFilter

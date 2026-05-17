@@ -63,7 +63,7 @@ async def test_join_against_grouped_subquery(pg_conn: Any) -> None:
 
     revenue_by_user = (
         SubqOrders
-        .select(SubqOrders.user_id, SubqOrders.amount.sum().as_("total"))
+        .select(SubqOrders.user_id, SubqOrders.amount.sum().aliased("total"))
         .group_by(SubqOrders.user_id)
         .aliased("rev")
     )

@@ -51,7 +51,7 @@ async def test_self_join_returns_manager_report_pairs(pg_conn: Any) -> None:
     Rep = Employees.aliased("rep")
 
     q = (
-        Mgr.select(Mgr.name.as_("manager_name"), Rep.name.as_("report_name"))
+        Mgr.select(Mgr.name.aliased("manager_name"), Rep.name.aliased("report_name"))
         .join(Rep, on=Mgr.id == Rep.manager_id)
         .order_by(Rep.name)
     )

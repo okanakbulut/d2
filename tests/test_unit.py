@@ -350,12 +350,12 @@ class TestBetweenPredicate:
 
 class TestColumnAliasing:
     def test_as_renders_alias_in_select(self):
-        sql, params = Users.select(Users.name.as_("display_name")).build()
+        sql, params = Users.select(Users.name.aliased("display_name")).build()
         assert sql == 'SELECT "users"."name" "display_name" FROM "public"."users"'
         assert params == ()
 
     def test_as_does_not_mutate_original(self):
-        aliased = Users.name.as_("display_name")
+        aliased = Users.name.aliased("display_name")
         sql, params = Users.select(Users.name).build()
         assert sql == 'SELECT "users"."name" FROM "public"."users"'
         assert params == ()

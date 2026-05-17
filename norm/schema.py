@@ -4,6 +4,7 @@ import typing
 from typing import Any, ClassVar, Generic, Self, TypeVar, cast, overload
 
 import pypika
+import pypika.analytics
 import pypika.enums
 import pypika.functions
 import pypika.terms
@@ -29,7 +30,7 @@ _QUERY_STATE_KEYS: tuple[str, ...] = (
     "__inner__",
     "__union_left__",
     "__union_right__",
-    "__union_all__",
+    "__set_op__",
     "__ctes__",
     "__recursive__",
 )
@@ -48,13 +49,13 @@ _DEFAULTS: dict[str, Any] = {
     "__inner__": None,
     "__union_left__": None,
     "__union_right__": None,
-    "__union_all__": False,
+    "__set_op__": "",
     "__ctes__": (),
     "__recursive__": False,
 }
 
 
-class NamespacedField(pypika.terms.Field):
+class NamespacedField(pypika.Field):
     """pypika Field that always renders as [alias_or_table].column."""
 
     def get_sql(self, **kwargs: Any) -> str:
@@ -76,7 +77,6 @@ class NamespacedField(pypika.terms.Field):
         return field_sql
 
 T = TypeVar("T")
-# _EntityT = TypeVar("_EntityT", bound=Entity)
 
 
 class Field(Generic[T]):
@@ -158,7 +158,7 @@ class Field(Generic[T]):
         from .filter import Filter
         return Filter(field=self, value=(lo, hi), op="between")
 
-    def as_(self, alias: str) -> Field[T]:
+    def aliased(self, alias: str) -> "Field[T]":
         new = cast("Field[T]", Field.__new__(Field))
         object.__setattr__(new, "column_name", self.column_name)
         object.__setattr__(new, "python_type", self.python_type)
@@ -166,44 +166,53 @@ class Field(Generic[T]):
         object.__setattr__(new, "pika_field", self.pika_field.as_(alias))
         return new
 
-    def count(self, distinct: bool = False) -> Field[int]:
+    def count(self, distinct: bool = False) -> "Field[int]":
         term = pypika.functions.Count(self.pika_field)
         if distinct:
             term = term.distinct()
         return _AggField(int, term)
 
-    def sum(self) -> Field[T]:
+    def sum(self) -> "Field[T]":
         return _AggField(self.python_type, pypika.functions.Sum(self.pika_field))
 
-    def min(self) -> Field[T]:
+    def min(self) -> "Field[T]":
         return _AggField(self.python_type, pypika.functions.Min(self.pika_field))
 
-    def max(self) -> Field[T]:
+    def max(self) -> "Field[T]":
         return _AggField(self.python_type, pypika.functions.Max(self.pika_field))
 
-    def avg(self) -> Field[float]:
+    def avg(self) -> "Field[float]":
         return _AggField(float, pypika.functions.Avg(self.pika_field))
 
-    def coalesce(self, default: Any) -> Field[T]:
+    def coalesce(self, default: Any) -> "Field[T]":
         return _CoalesceField(self, default)
 
-    def cast(self, sql_type: str) -> Field[Any]:
+    def cast(self, sql_type: str) -> "Field[Any]":
         return _AggField(type(None), pypika.functions.Cast(self.pika_field, sql_type))
 
     def to_column(self, params: list[Any], dialect: Any) -> Any:
         return self.pika_field
 
-    def __add__(self, other: Any) -> Field[Any]:
-        return _arith_field(self, "+", other)
+    def desc(self) -> "_SortedField[T]":
+        return _SortedField(self, descending=True)
 
-    def __sub__(self, other: Any) -> Field[Any]:
-        return _arith_field(self, "-", other)
+    def asc(self) -> "_SortedField[T]":
+        return _SortedField(self, descending=False)
 
-    def __mul__(self, other: Any) -> Field[Any]:
-        return _arith_field(self, "*", other)
+    def over(self, *partition_by: "Field[Any]") -> "WindowSpec":
+        return WindowSpec(pypika.analytics.RowNumber(), partition_by, ())
 
-    def __truediv__(self, other: Any) -> Field[Any]:
-        return _arith_field(self, "/", other)
+    def __add__(self, other: Any) -> "Field[Any]":
+        return _ArithField(self, "+", other)
+
+    def __sub__(self, other: Any) -> "Field[Any]":
+        return _ArithField(self, "-", other)
+
+    def __mul__(self, other: Any) -> "Field[Any]":
+        return _ArithField(self, "*", other)
+
+    def __truediv__(self, other: Any) -> "Field[Any]":
+        return _ArithField(self, "/", other)
 
     def __hash__(self) -> int:
         return hash(self.column_name)
@@ -243,9 +252,6 @@ class _ArithField(Field[Any]):
         return ops[op]
 
 
-def _arith_field(left: Field[Any], op: str, right: Any) -> _ArithField:
-    return _ArithField(left, op, right)
-
 
 class _AggField(Field[T]):
     """A Field backed by a pypika aggregate (or scalar) term."""
@@ -259,8 +265,15 @@ class _AggField(Field[T]):
     def to_column(self, params: list[Any], dialect: Any) -> Any:
         return self.pika_field
 
-    def as_(self, alias: str) -> Field[T]:
+    def aliased(self, alias: str) -> Field[T]:
         return _AggField(self.python_type, self.pika_field.as_(alias))
+
+    def over(self, *partition_by: "Field[Any]") -> "WindowSpec":
+        fn_name = getattr(self.pika_field, "name", "").upper()
+        analytic_cls = _ANALYTIC_FN_MAP.get(fn_name, pypika.analytics.RowNumber)
+        args = getattr(self.pika_field, "args", [])
+        analytic_fn = analytic_cls(*args)
+        return WindowSpec(analytic_fn, partition_by, ())
 
 
 class _CoalesceField(Field[T]):
@@ -277,7 +290,7 @@ class _CoalesceField(Field[T]):
         object.__setattr__(self, "_source", source)
         object.__setattr__(self, "_default", default)
 
-    def as_(self, alias: str) -> Field[T]:
+    def aliased(self, alias: str) -> Field[T]:
         source: Field[T] = object.__getattribute__(self, "_source")
         default: Any = object.__getattribute__(self, "_default")
         new = _CoalesceField(source, default)
@@ -294,6 +307,56 @@ class _CoalesceField(Field[T]):
         if alias:
             return term.as_(alias)
         return term
+
+
+_ANALYTIC_FN_MAP: dict[str, type] = {
+    "AVG":   pypika.analytics.Avg,
+    "SUM":   pypika.analytics.Sum,
+    "MIN":   pypika.analytics.Min,
+    "MAX":   pypika.analytics.Max,
+    "COUNT": pypika.analytics.Count,
+}
+
+
+class _SortedField(Field[T]):
+    """A Field annotated with a sort direction; produced by Field.desc() / Field.asc()."""
+
+    descending: bool
+
+    def __init__(self, source: "Field[T]", descending: bool) -> None:
+        object.__setattr__(self, "column_name", source.column_name)
+        object.__setattr__(self, "python_type", source.python_type)
+        object.__setattr__(self, "field_def", source.field_def)
+        object.__setattr__(self, "pika_field", source.pika_field)
+        object.__setattr__(self, "descending", descending)
+
+
+class WindowSpec:
+    """Intermediate produced by Field.over(); chain .order_by() then finalize with .aliased()."""
+
+    def __init__(
+        self,
+        analytic_fn: Any,
+        partition: "tuple[Field[Any], ...]",
+        orderings: "tuple[Field[Any], ...]",
+    ) -> None:
+        self._analytic_fn = analytic_fn
+        self._partition = partition
+        self._orderings = orderings
+
+    def order_by(self, *fields: "Field[Any]") -> "WindowSpec":
+        return WindowSpec(self._analytic_fn, self._partition, self._orderings + fields)
+
+    def aliased(self, alias: str) -> "Field[Any]":
+        pika_partitions = [f.pika_field for f in self._partition]
+        term = self._analytic_fn.over(*pika_partitions)
+        for f in self._orderings:
+            if isinstance(f, _SortedField):
+                order = pypika.enums.Order.desc if f.descending else pypika.enums.Order.asc
+                term = term.orderby(f.pika_field, order=order)
+            else:
+                term = term.orderby(f.pika_field)
+        return _AggField(type(None), term.as_(alias))
 
 
 Column = Field  # alias
@@ -431,7 +494,7 @@ class Entity(metaclass=NormMeta):
     __inner__: ClassVar[Any] = None
     __union_left__: ClassVar[Any] = None
     __union_right__: ClassVar[Any] = None
-    __union_all__: ClassVar[bool] = False
+    __set_op__: ClassVar[str] = ""
     __ctes__: ClassVar[tuple[Any, ...]] = ()
     __recursive__: ClassVar[bool] = False
 
@@ -596,8 +659,7 @@ class Selectable(Entity):
         return q
 
     @classmethod
-    def union(cls, other: type[Selectable], *, all: bool = False) -> type[Self]:
-        """Return a new entity representing UNION [ALL] of this query and other."""
+    def _make_set_op(cls, other: type[Selectable], op: str) -> type[Self]:
         ns: dict[str, Any] = {
             "__table__": cls.__table__,
             "__fields__": getattr(cls, "__columns__", ()) or cls.__fields__,
@@ -606,11 +668,23 @@ class Selectable(Entity):
             ns[key] = _DEFAULTS[key]
         ns["__union_left__"] = cls
         ns["__union_right__"] = other
-        ns["__union_all__"] = all
+        ns["__set_op__"] = op
         for attr, val in vars(cls).items():
             if isinstance(val, Field):
                 ns[attr] = val
         return cast(type[Self], NormMeta(cls.__name__, (cls,), ns))
+
+    @classmethod
+    def union(cls, other: type[Selectable], *, all: bool = False) -> type[Self]:
+        return cls._make_set_op(other, "UNION ALL" if all else "UNION")
+
+    @classmethod
+    def intersect(cls, other: type[Selectable]) -> type[Self]:
+        return cls._make_set_op(other, "INTERSECT")
+
+    @classmethod
+    def exclude(cls, other: type[Selectable]) -> type[Self]:
+        return cls._make_set_op(other, "EXCEPT")
 
     @classmethod
     def as_scalar(cls) -> "Any":
@@ -641,11 +715,31 @@ class Selectable(Entity):
         return q
 
     @classmethod
+    def _build_set_op(cls, params: list[Any], dialect: Dialect) -> str:
+        left_sql = cls.__union_left__.as_pypika(params, dialect).get_sql(quote_char='"')
+        right_sql = cls.__union_right__.as_pypika(params, dialect).get_sql(quote_char='"')
+        sql = f"({left_sql}) {cls.__set_op__} ({right_sql})"
+        if cls.__orderings__:
+            parts: list[str] = []
+            for f, is_desc in cls.__orderings__:
+                direction = "DESC" if is_desc else "ASC"
+                parts.append(f'"{f.column_name}" {direction}')
+            sql += " ORDER BY " + ", ".join(parts)
+        if cls.__row_limit__ is not None:
+            sql += f" LIMIT {cls.__row_limit__}"
+        if cls.__row_offset__ is not None:
+            sql += f" OFFSET {cls.__row_offset__}"
+        return sql
+
+    @classmethod
     def build(cls, dialect: Dialect = PostgresDialect()) -> tuple[str, tuple[Any, ...]]:
         if cls.__ctes__:
             return cls._build_with(dialect)
         params: list[Any] = []
-        sql = cls.as_pypika(params, dialect).get_sql(quote_char='"')
+        if cls.__union_left__ is not None:
+            sql = cls._build_set_op(params, dialect)
+        else:
+            sql = cls.as_pypika(params, dialect).get_sql(quote_char='"')
         return sql, tuple(params)
 
     @classmethod
@@ -659,7 +753,7 @@ class Selectable(Entity):
             if union_left is not None:
                 left_sql = union_left.as_pypika(params, dialect, cte_names).get_sql(quote_char='"')
                 right_sql = inner.__union_right__.as_pypika(params, dialect, cte_names).get_sql(quote_char='"')
-                union_kw = "UNION ALL" if inner.__union_all__ else "UNION"
+                union_kw = inner.__set_op__ or "UNION"
                 body_sql = f"{left_sql} {union_kw} {right_sql}"
             else:
                 body_sql = inner.as_pypika(params, dialect, cte_names).get_sql(quote_char='"')

@@ -54,7 +54,7 @@ async def test_predicates_ordering_aliasing(pg_conn: Any) -> None:
     """Exercises BETWEEN, IS NOT NULL, ILIKE, ORDER BY, LIMIT, OFFSET, and column alias."""
     q = (
         Accounts
-        .select(Accounts.name.as_("display_name"), Accounts.score)
+        .select(Accounts.name.aliased("display_name"), Accounts.score)
         .where(Accounts.score.between(50, 90))
         .where(Accounts.email.isnotnull())
         .where(Accounts.name.ilike("a%"))

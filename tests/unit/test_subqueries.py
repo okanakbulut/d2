@@ -7,17 +7,17 @@ from .conftest import Users, Orders
 
 class TestAliasedSubquery:
     def test_aliased_returns_entity_type(self):
-        inner = Orders.select(Orders.user_id, Orders.amount.sum().as_("total")).group_by(Orders.user_id)
+        inner = Orders.select(Orders.user_id, Orders.amount.sum().aliased("total")).group_by(Orders.user_id)
         view = inner.aliased("rev")
         assert isinstance(view, type)
 
     def test_aliased_exposes_plain_column_as_field(self):
-        inner = Orders.select(Orders.user_id, Orders.amount.sum().as_("total")).group_by(Orders.user_id)
+        inner = Orders.select(Orders.user_id, Orders.amount.sum().aliased("total")).group_by(Orders.user_id)
         view = inner.aliased("rev")
         assert isinstance(view.user_id, Field)
 
     def test_aliased_exposes_aliased_agg_as_field(self):
-        inner = Orders.select(Orders.user_id, Orders.amount.sum().as_("total")).group_by(Orders.user_id)
+        inner = Orders.select(Orders.user_id, Orders.amount.sum().aliased("total")).group_by(Orders.user_id)
         view = inner.aliased("rev")
         assert isinstance(view.total, Field)
 
@@ -29,7 +29,7 @@ class TestAliasedSubquery:
 
 class TestSubqueryJoin:
     def test_join_renders_full_subquery_sql(self):
-        inner = Orders.select(Orders.user_id, Orders.amount.sum().as_("total")).group_by(Orders.user_id)
+        inner = Orders.select(Orders.user_id, Orders.amount.sum().aliased("total")).group_by(Orders.user_id)
         view = inner.aliased("rev")
         q = Users.select(Users.name).join(view, on=Users.id == view.user_id)
         sql, params = q.build()
@@ -42,7 +42,7 @@ class TestSubqueryJoin:
         assert params == ()
 
     def test_left_join_subquery(self):
-        inner = Orders.select(Orders.user_id, Orders.amount.sum().as_("total")).group_by(Orders.user_id)
+        inner = Orders.select(Orders.user_id, Orders.amount.sum().aliased("total")).group_by(Orders.user_id)
         view = inner.aliased("rev")
         q = Users.select(Users.name).left_join(view, on=Users.id == view.user_id)
         sql, params = q.build()
@@ -55,7 +55,7 @@ class TestSubqueryJoin:
         assert params == ()
 
     def test_subquery_column_in_outer_where(self):
-        inner = Orders.select(Orders.user_id, Orders.amount.sum().as_("total")).group_by(Orders.user_id)
+        inner = Orders.select(Orders.user_id, Orders.amount.sum().aliased("total")).group_by(Orders.user_id)
         view = inner.aliased("rev")
         q = (Users.select(Users.name)
              .join(view, on=Users.id == view.user_id)
@@ -71,7 +71,7 @@ class TestSubqueryJoin:
         assert params == (1000,)
 
     def test_subquery_column_in_outer_select(self):
-        inner = Orders.select(Orders.user_id, Orders.amount.sum().as_("total")).group_by(Orders.user_id)
+        inner = Orders.select(Orders.user_id, Orders.amount.sum().aliased("total")).group_by(Orders.user_id)
         view = inner.aliased("rev")
         q = (Users.select(Users.name, view.total)
              .join(view, on=Users.id == view.user_id))
@@ -85,7 +85,7 @@ class TestSubqueryJoin:
         assert params == ()
 
     def test_inner_subquery_params_numbered_before_outer(self):
-        inner = Orders.select(Orders.user_id, Orders.amount.sum().as_("total")).group_by(Orders.user_id).having(Orders.amount.sum() > 50)
+        inner = Orders.select(Orders.user_id, Orders.amount.sum().aliased("total")).group_by(Orders.user_id).having(Orders.amount.sum() > 50)
         view = inner.aliased("rev")
         q = (Users.select(Users.name)
              .join(view, on=Users.id == view.user_id)

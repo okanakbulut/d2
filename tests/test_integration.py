@@ -111,7 +111,7 @@ async def test_predicates_ordering_aliasing(pg_conn: Any) -> None:
     """Three predicate types + order_by + limit + offset + aliased column."""
     q = (
         Accounts
-        .select(Accounts.name.as_("display_name"), Accounts.score)
+        .select(Accounts.name.aliased("display_name"), Accounts.score)
         .where(Accounts.score.between(50, 90))   # predicate 1: BETWEEN
         .where(Accounts.email.isnotnull())         # predicate 2: IS NOT NULL
         .where(Accounts.name.ilike("a%"))          # predicate 3: ILIKE

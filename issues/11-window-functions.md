@@ -11,27 +11,59 @@ This slice covers the spec's "window function specification" requirement (R13). 
 
 ### Usage example
 
-```python
-# ROW_NUMBER() OVER (PARTITION BY name ORDER BY created_at)
-row_num = (
-    Users.id
-    .over(Users.name)
-    .order_by(Users.created_at)
-    .as_("row_num")
-)
-q = Users.select(Users.name, row_num)
-# → SELECT users.name,
-#          row_number(users.id) OVER (PARTITION BY users.name ORDER BY users.created_at) AS row_num
-#   FROM users
+Source: https://www.postgresql.org/docs/current/tutorial-window.html (`empsalary` table with columns `depname`, `empno`, `salary`).
 
-# AVG(amount) OVER (PARTITION BY user_id)
-avg_per_user = (
-    Orders.amount
+```python
+# AVG(salary) OVER (PARTITION BY depname)
+# → each employee row also shows the average salary for their department
+avg_by_dept = (
+    EmpSalary.salary
     .avg()
-    .over(Orders.user_id)
-    .as_("user_avg")
+    .over(EmpSalary.depname)
+    .as_("avg")
 )
-q = Orders.select(Orders.id, avg_per_user)
+q = EmpSalary.select(EmpSalary.depname, EmpSalary.empno, EmpSalary.salary, avg_by_dept)
+# → SELECT empsalary.depname, empsalary.empno, empsalary.salary,
+#          avg(empsalary.salary) OVER (PARTITION BY empsalary.depname) AS avg
+#   FROM empsalary
+
+# ROW_NUMBER() OVER (PARTITION BY depname ORDER BY salary DESC)
+# → rank employees within each department by salary
+row_num = (
+    EmpSalary.empno
+    .over(EmpSalary.depname)
+    .order_by(EmpSalary.salary.desc())
+    .as_("row_number")
+)
+q = EmpSalary.select(EmpSalary.depname, EmpSalary.empno, EmpSalary.salary, row_num)
+# → SELECT empsalary.depname, empsalary.empno, empsalary.salary,
+#          row_number() OVER (PARTITION BY empsalary.depname ORDER BY empsalary.salary DESC) AS row_number
+#   FROM empsalary
+
+# SUM(salary) OVER ()  — empty window covers all rows (grand total on every row)
+grand_total = (
+    EmpSalary.salary
+    .sum()
+    .over()
+    .as_("sum")
+)
+q = EmpSalary.select(EmpSalary.salary, grand_total)
+# → SELECT empsalary.salary,
+#          sum(empsalary.salary) OVER () AS sum
+#   FROM empsalary
+
+# SUM(salary) OVER (ORDER BY salary)  — running total ordered by salary
+running_sum = (
+    EmpSalary.salary
+    .sum()
+    .over()
+    .order_by(EmpSalary.salary)
+    .as_("sum")
+)
+q = EmpSalary.select(EmpSalary.salary, running_sum)
+# → SELECT empsalary.salary,
+#          sum(empsalary.salary) OVER (ORDER BY empsalary.salary) AS sum
+#   FROM empsalary
 ```
 
 ## Acceptance criteria

@@ -8,11 +8,11 @@ class TestCombined:
         sql, params = (
             Users.select(
                 Users.name,
-                Users.id.count(distinct=True).as_("unique_users"),
-                Users.age.avg().as_("avg_age"),
-                Users.age.max().as_("oldest"),
-                Users.age.coalesce(0).as_("age_safe"),
-                Users.age.cast("float").as_("age_f"),
+                Users.id.count(distinct=True).aliased("unique_users"),
+                Users.age.avg().aliased("avg_age"),
+                Users.age.max().aliased("oldest"),
+                Users.age.coalesce(0).aliased("age_safe"),
+                Users.age.cast("float").aliased("age_f"),
             )
             .group_by(Users.name)
             .having(Users.id.count() > 5)
@@ -80,12 +80,12 @@ class TestGroupBy:
 
 class TestAlias:
     def test_agg_field_as_renders_alias(self):
-        sql, params = Users.select(Users.id.count().as_("total")).build()
+        sql, params = Users.select(Users.id.count().aliased("total")).build()
         assert sql == 'SELECT COUNT("users"."id") "total" FROM "public"."users"'
         assert params == ()
 
     def test_coalesce_as_renders_alias(self):
-        sql, params = Users.select(Users.age.coalesce(0).as_("age_safe")).build()
+        sql, params = Users.select(Users.age.coalesce(0).aliased("age_safe")).build()
         assert sql == 'SELECT COALESCE("users"."age",$1) "age_safe" FROM "public"."users"'
         assert params == (0,)
 

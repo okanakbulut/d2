@@ -37,3 +37,10 @@ class Employees(Table):
     id:         PrimaryKey[int] = field(db_default=True)
     name:       Field[str]
     manager_id: Field[int]
+
+
+class EmpSalary(Table):
+    __meta__ = TableMeta(table="empsalary", schema="public")
+    depname: Field[str]
+    empno:   Field[int]
+    salary:  Field[int]

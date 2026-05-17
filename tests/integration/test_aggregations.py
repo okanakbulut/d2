@@ -45,8 +45,8 @@ async def test_group_by_having_returns_expected_aggregates(pg_conn: Any) -> None
     q = (
         Accounts.select(
             Accounts.name,
-            Accounts.id.count().as_("cnt"),
-            Accounts.score.avg().as_("avg_score"),
+            Accounts.id.count().aliased("cnt"),
+            Accounts.score.avg().aliased("avg_score"),
         )
         .group_by(Accounts.name)
         .having(Accounts.score.min() > 60)

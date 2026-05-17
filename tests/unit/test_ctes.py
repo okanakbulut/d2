@@ -63,7 +63,7 @@ class TestNamedCTE:
 
     def test_left_join_with_named_cte(self):
         rev = (
-            Orders.select(Orders.user_id, Orders.amount.sum().as_("total"))
+            Orders.select(Orders.user_id, Orders.amount.sum().aliased("total"))
             .group_by(Orders.user_id)
             .aliased("rev")
         )
@@ -86,7 +86,7 @@ class TestNamedCTE:
 
     def test_cte_column_in_outer_where(self):
         rev = (
-            Orders.select(Orders.user_id, Orders.amount.sum().as_("total"))
+            Orders.select(Orders.user_id, Orders.amount.sum().aliased("total"))
             .group_by(Orders.user_id)
             .aliased("rev")
         )

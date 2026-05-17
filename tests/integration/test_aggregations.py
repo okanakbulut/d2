@@ -9,9 +9,6 @@ import pytest
 from norm import AsyncConnection
 from .conftest import Accounts
 
-pytestmark = pytest.mark.integration
-
-
 class AggRow(msgspec.Struct):
     name: str
     cnt: int

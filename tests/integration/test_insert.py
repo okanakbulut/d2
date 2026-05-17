@@ -9,8 +9,6 @@ import pytest
 from norm import AsyncConnection
 from .conftest import Accounts, AccountResult
 
-pytestmark = pytest.mark.integration
-
 
 class InsertedAccount(msgspec.Struct):
     id: int

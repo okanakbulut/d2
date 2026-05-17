@@ -7,8 +7,6 @@ import pytest
 
 from norm import AsyncConnection, TableMeta, Table, PrimaryKey, Field, field, With
 
-pytestmark = pytest.mark.integration
-
 
 class Employees(Table):
     __meta__ = TableMeta(table="cte_employees", schema="public")

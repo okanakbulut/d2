@@ -359,6 +359,29 @@ class WindowSpec:
         return _AggField(type(None), term.as_(alias))
 
 
+class _ExcludedTerm(pypika.terms.Term):
+    """Renders as EXCLUDED."column" — EXCLUDED is a keyword, not a quoted table name."""
+
+    def __init__(self, column_name: str) -> None:
+        super().__init__(alias=None)
+        self._col = column_name
+
+    def get_sql(self, **kwargs: Any) -> str:
+        quote_char = kwargs.get("quote_char", None)
+        col = format_quotes(self._col, quote_char)
+        return f"EXCLUDED.{col}"
+
+
+def excluded(proxy: "Field[T]") -> "Field[T]":
+    """Clone a FieldProxy that renders as EXCLUDED."column" in ON CONFLICT DO UPDATE."""
+    new: Field[T] = Field.__new__(type(proxy))
+    object.__setattr__(new, "column_name", proxy.column_name)
+    object.__setattr__(new, "python_type", proxy.python_type)
+    object.__setattr__(new, "field_def", proxy.field_def)
+    object.__setattr__(new, "pika_field", _ExcludedTerm(proxy.column_name))
+    return new
+
+
 Column = Field  # alias
 
 

@@ -1,100 +1,86 @@
 # 12 — UPSERT (`INSERT … ON CONFLICT`)
 
-Status: needs-triage
-Type: HITL — API confirmation required before implementation
+Status: ready
+Type: implementation
 
 ## What to build
 
-Add UPSERT support to the INSERT path: `INSERT … ON CONFLICT (target) DO UPDATE SET …` and `INSERT … ON CONFLICT (target) DO NOTHING`. The conflict target must be expressed as a `FieldProxy` (single column or composite) — no string column names.
+Add UPSERT support to the INSERT path: `INSERT … ON CONFLICT (target) DO UPDATE SET …` and `INSERT … ON CONFLICT (target) DO NOTHING`. The conflict target must be expressed as one or more `FieldProxy` instances (single column or composite) — no string column names.
 
-The design doc sketches the call site as:
+## API (confirmed)
 
-```python
-q = (
-    Users
-    .insert({"name": "Alice", "email": "alice@example.com"})
-    .on_conflict(Users.email)
-    .do_update(Users.name)
-    .build()
-)
-```
-
-…but the exact shape of `.do_update(...)` is **not yet decided**. Three competing patterns are listed below — pick one before implementation starts.
-
-### API options to confirm
-
-**Option A — column references only**, "update each named column to the EXCLUDED value":
-
-```python
-q = (
-    Users.insert({"name": "Alice", "email": "alice@example.com"})
-         .on_conflict(Users.email)
-         .do_update(Users.name)           # SET name = EXCLUDED.name
-)
-```
-
-Pros: trivial call site. Cons: only the "use the proposed value" pattern is expressible.
-
-**Option B — assignments**, mirroring UPDATE:
-
-```python
-q = (
-    Users.insert({"name": "Alice", "email": "alice@example.com"})
-         .on_conflict(Users.email)
-         .do_update(
-             Users.name.set(Users.name),                       # keep existing
-             Users.login_count.set(Users.login_count + 1),     # arithmetic
-         )
-)
-```
-
-Pros: maximally expressive — supports arithmetic and arbitrary SET RHS. Cons: no syntactic distinction between "use proposed value" vs "use existing" — needs an `excluded` helper.
-
-**Option C — excluded helper + assignments**:
+### Single-row insert
 
 ```python
 from norm import excluded
 
-q = (
-    Users.insert({"name": "Alice", "email": "alice@example.com"})
-         .on_conflict(Users.email)
-         .do_update(
-             Users.name.set(excluded(Users.name)),             # use proposed
-             Users.login_count.set(Users.login_count + 1),
-         )
-)
+Users.insert(name="Alice", email="alice@example.com")
+     .on_conflict(Users.email)
+     .do_update(name=excluded(Users.name))
 ```
 
-Pros: explicit, expressive, no ambiguity. Cons: an extra import / one more concept.
-
-**For `do_nothing`** there's no ambiguity:
+### Bulk insert
 
 ```python
-q = Users.insert({...}).on_conflict(Users.email).do_nothing()
+Users.insert([
+    {"name": "Alice", "email": "alice@example.com"},
+    {"name": "Bob",   "email": "bob@example.com"},
+])
+.on_conflict(Users.email)
+.update(name=excluded(Users.name))
 ```
 
-### Usage example (once option is chosen)
-
-A representative round-trip exercising the chosen API plus a multi-column conflict target:
+### Composite conflict target
 
 ```python
-q = (
-    Users
-    .insert({"name": "Alice", "email": "alice@example.com", "tenant_id": 7})
-    .on_conflict(Users.email, Users.tenant_id)   # composite target
-    .do_update(...)                              # per chosen option
-)
+Users.insert(name="Alice", email="alice@example.com", tenant_id=7)
+     .on_conflict(Users.email, Users.tenant_id)
+     .do_update(name=excluded(Users.name))
 ```
+
+### Mixed update expressions
+
+```python
+Users.insert(name="Alice", email="alice@example.com", login_count=1)
+     .on_conflict(Users.email)
+     .update(
+         name=excluded(Users.name),          # SET name = EXCLUDED.name
+         login_count=Users.login_count + 1,  # SET login_count = login_count + 1
+     )
+```
+
+### Do nothing
+
+```python
+Users.insert(name="Alice", email="alice@example.com")
+     .on_conflict(Users.email)
+     .do_nothing()
+```
+
+## Design notes
+
+- `.do_update(**kwargs)` — keys are column names (strings), values are either literals (bound as parameters) or expressions (`FieldProxy`, arithmetic, `excluded(...)`).
+- `excluded(proxy)` — wraps a `FieldProxy` to render as `EXCLUDED.<column>` in SQL. Exported from `norm`.
+- `.on_conflict(*proxies)` — accepts one or more `FieldProxy` instances as the composite conflict target.
+- PostgreSQL's `EXCLUDED` is a per-row virtual table, so `excluded()` works correctly across all rows in a bulk insert automatically.
+- `.do_nothing()` and `.do_update(...)` are mutually exclusive terminal methods on the conflict builder.
 
 ## Acceptance criteria
 
-- [ ] User has confirmed which option (A / B / C) the API will adopt
-- [ ] `QueryBuilder` (or whatever the post-insert object is) exposes `on_conflict(*proxies)` accepting one or more `FieldProxy` instances as the conflict target
-- [ ] `do_update(...)` matches the chosen option's signature
-- [ ] `do_nothing()` produces `ON CONFLICT (...) DO NOTHING`
-- [ ] All literal values flow through bound parameters
-- [ ] Unit tests assert SQL + params for: single-column conflict + update, composite conflict + update, `do_nothing`
-- [ ] End-to-end integration test against real PostgreSQL: a duplicate insert into a unique column resolves correctly under the chosen semantics
+- [x] `InsertQuery` exposes `.on_conflict(*proxies)` returning a conflict builder
+- [x] Conflict builder exposes `.do_update(**kwargs)` where values may be literals, `FieldProxy` expressions, or `excluded(proxy)`
+- [x] Conflict builder exposes `.do_nothing()` producing `ON CONFLICT (...) DO NOTHING`
+- [x] `excluded(proxy)` is importable from `norm` and renders as `EXCLUDED.<column>`
+- [x] All literal values flow through bound parameters
+- [x] Works identically for single-row (kwargs) and bulk (list-of-dicts) inserts
+- [x] Unit tests assert full SQL strings + params for:
+  - single-column conflict + `.update()` with literal value
+  - single-column conflict + `.update()` with `excluded()`
+  - single-column conflict + `.update()` with arithmetic expression
+  - composite conflict target
+  - `.do_nothing()`
+  - bulk insert + `.on_conflict().update()`
+- [x] Integration test against real PostgreSQL: duplicate insert into a unique column resolves correctly for both `.update()` and `.do_nothing()`
 
 ## Blocked by
 

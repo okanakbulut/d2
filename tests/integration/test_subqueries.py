@@ -3,12 +3,9 @@
 
 from typing import Any
 
-import msgspec
-import pytest
+import msgspec, pytest
 
 from norm import AsyncConnection, TableMeta, Table, PrimaryKey, Field, field
-
-pytestmark = pytest.mark.integration
 
 
 class SubqOrders(Table):

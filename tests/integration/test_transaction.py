@@ -8,8 +8,6 @@ import pytest
 from norm import AsyncConnection
 from .conftest import TxnAccounts
 
-pytestmark = pytest.mark.integration
-
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_transaction_commit(pg_conn: Any) -> None:

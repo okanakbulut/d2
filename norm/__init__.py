@@ -10,6 +10,7 @@ from .schema import (
     Writable,
     Table,
     View,
+    excluded,
 )
 from .query import With
 from .dialect import Dialect, PostgresDialect
@@ -30,6 +31,7 @@ __all__ = [
     "Table",
     "View",
     "With",
+    "excluded",
     "Dialect",
     "PostgresDialect",
     "AsyncConnection",

@@ -8,8 +8,6 @@ import pytest
 from norm import AsyncConnection
 from .conftest import Accounts, AccountResult, AccountSummary
 
-pytestmark = pytest.mark.integration
-
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_select_round_trip(pg_conn: Any) -> None:

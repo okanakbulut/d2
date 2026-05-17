@@ -14,6 +14,76 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True)
+class ConflictBuilder:
+    """Intermediate/terminal builder produced by InsertQuery.on_conflict()."""
+
+    insert: Any  # InsertQuery
+    targets: tuple[Any, ...]  # tuple[NormField, ...]
+    action: str = ""  # "nothing" | "update"
+    assignments: tuple[tuple[str, Any], ...] = dc_field(default_factory=tuple)
+    returning_fields: tuple[Any, ...] = dc_field(default_factory=tuple)  # tuple[NormField, ...]
+
+    def do_nothing(self) -> "ConflictBuilder":
+        return ConflictBuilder(insert=self.insert, targets=self.targets, action="nothing")
+
+    def do_update(self, **kwargs: Any) -> "ConflictBuilder":
+        assignments = tuple((k, v) for k, v in kwargs.items())
+        return ConflictBuilder(
+            insert=self.insert, targets=self.targets,
+            action="update", assignments=assignments,
+        )
+
+    update = do_update
+
+    def returning(self, *fields: Any) -> "ConflictBuilder":
+        return ConflictBuilder(
+            insert=self.insert, targets=self.targets,
+            action=self.action, assignments=self.assignments,
+            returning_fields=fields,
+        )
+
+    def build(self, dialect: Dialect = PostgresDialect()) -> tuple[str, Any]:
+        base_sql, base_params = self.insert.build(dialect)
+
+        target_cols = ", ".join(f'"{p.column_name}"' for p in self.targets)
+
+        if self.action == "nothing":
+            sql = f"{base_sql} ON CONFLICT ({target_cols}) DO NOTHING"
+        else:
+            # "update" — build SET clause
+            n_insert_cols = len(self.insert.rows[0])
+            # Seed offset_params with n_insert_cols dummy entries so that
+            # to_column() appends literals at the correct positional indices ($N+1…).
+            offset_params: list[Any] = [None] * n_insert_cols
+
+            set_parts: list[str] = []
+            for col_name, value in self.assignments:
+                from .schema import Field as NormField
+                if isinstance(value, NormField):
+                    term = value.to_column(offset_params, dialect)
+                    term_sql = term.get_sql(quote_char='"')
+                else:
+                    offset_params.append(value)
+                    term_sql = dialect.placeholder(len(offset_params))
+                set_parts.append(f'"{col_name}"={term_sql}')
+
+            conflict_values = offset_params[n_insert_cols:]
+            set_clause = ", ".join(set_parts)
+            sql = f"{base_sql} ON CONFLICT ({target_cols}) DO UPDATE SET {set_clause}"
+
+            if self.insert.is_many:
+                base_params = [row + tuple(conflict_values) for row in base_params]
+            else:
+                base_params = base_params + tuple(conflict_values)
+
+        if self.returning_fields:
+            ret_cols = ",".join(f.pika_field.get_sql(quote_char='"') for f in self.returning_fields)
+            sql = f"{sql} RETURNING {ret_cols}"
+
+        return sql, base_params
+
+
+@dataclass(frozen=True)
 class ScalarSubquery:
     inner: Any  # Entity clone type (Selectable subclass)
 
@@ -87,6 +157,9 @@ class InsertQuery:
             source=self.source, rows=self.rows,
             is_many=self.is_many, returning_fields=fields,
         )
+
+    def on_conflict(self, *proxies: NormField[Any]) -> ConflictBuilder:
+        return ConflictBuilder(insert=self, targets=proxies)
 
     def build(self, dialect: Dialect = PostgresDialect()) -> tuple[str, Any]:
         if not self.rows:

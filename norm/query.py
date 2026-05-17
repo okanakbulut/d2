@@ -1,6 +1,6 @@
 
 from dataclasses import dataclass, field as dc_field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import pypika
 import pypika.enums
@@ -10,7 +10,7 @@ from .dialect import Dialect, PostgresDialect
 
 if TYPE_CHECKING:
     from .filter import Filter, AnyFilter
-    from .schema import Field as NormField
+    from .schema import Field as NormField, Selectable
 
 
 @dataclass(frozen=True)
@@ -20,39 +20,42 @@ class ScalarSubquery:
 
 @dataclass(frozen=True)
 class JoinClause:
-    table: Any  # pypika.Table for entity joins, Entity clone type for subquery/CTE joins
-    criterion: "AnyFilter | None"
+    table: pypika.Table | type[Selectable]
+    criterion: AnyFilter | None
     kind: str  # "inner" | "left" | "right" | "cross"
 
     def apply_to(self, q: Any, params: list[Any], dialect: Dialect, cte_names: frozenset[str] = frozenset()) -> Any:
         if isinstance(self.table, type):
             # Entity clone used as join target (has __alias__ and __inner__)
-            alias: str = self.table.__alias__
-            inner = self.table.__inner__
+            alias: str = cast(str, self.table.__alias__)
+            inner: Any = self.table.__inner__
             if inner is not None and alias not in cte_names:
                 # Render as inline subquery
                 from pypika.queries import JoinOn, Join as PikaJoin
-                union_left = getattr(inner, "__union_left__", None)
+                union_left: Any = getattr(inner, "__union_left__", None)
                 if union_left is not None:
-                    left_pika = union_left.as_pypika(params, dialect)
-                    right_pika = inner.__union_right__.as_pypika(params, dialect)
-                    if inner.__union_all__:
-                        inner_pika = left_pika.union_all(right_pika)
+                    left_pika: Any = getattr(union_left, "as_pypika")(params, dialect)
+                    union_right: Any = getattr(inner, "__union_right__")
+                    right_pika: Any = getattr(union_right, "as_pypika")(params, dialect)
+                    if getattr(inner, "__union_all__", False):
+                        inner_pika: Any = getattr(left_pika, "union_all")(right_pika)
                     else:
-                        inner_pika = left_pika.union(right_pika)
+                        inner_pika = getattr(left_pika, "union")(right_pika)
                 else:
-                    inner_pika = inner.as_pypika(params, dialect)
-                join_target = inner_pika.as_(alias)
+                    inner_pika = getattr(inner, "as_pypika")(params, dialect)
+                join_target: Any = getattr(inner_pika, "as_")(alias)
                 join_type_map = {
                     "inner": pypika.enums.JoinType.inner,
                     "left": pypika.enums.JoinType.left,
                     "right": pypika.enums.JoinType.right,
                 }
+                _joins: list[Any] = getattr(q, "_joins")
                 if self.kind == "cross":
-                    q._joins.append(PikaJoin(join_target, pypika.enums.JoinType.cross))  # type: ignore[attr-defined]
+                    _joins.append(PikaJoin(join_target, pypika.enums.JoinType.cross))
                 else:
-                    criterion_pika = self.criterion.to_pypika(params, dialect)  # type: ignore[union-attr]
-                    q._joins.append(JoinOn(join_target, join_type_map[self.kind], criterion_pika, None))  # type: ignore[arg-type, attr-defined]
+                    assert self.criterion is not None
+                    criterion_pika = self.criterion.to_pypika(params, dialect)
+                    _joins.append(JoinOn(join_target, join_type_map[self.kind], cast(Any, criterion_pika), None))
                 return q
             # CTE reference: alias is in cte_names, use it as a plain table name
             pika_table = pypika.Table(alias)
@@ -60,14 +63,15 @@ class JoinClause:
             # Regular pypika.Table (possibly with alias for real table aliases)
             pika_table = self.table
 
-        if self.kind == "inner":
-            return q.join(pika_table).on(self.criterion.to_pypika(params, dialect))  # type: ignore[union-attr]
-        elif self.kind == "left":
-            return q.left_join(pika_table).on(self.criterion.to_pypika(params, dialect))  # type: ignore[union-attr]
-        elif self.kind == "right":
-            return q.right_join(pika_table).on(self.criterion.to_pypika(params, dialect))  # type: ignore[union-attr]
-        elif self.kind == "cross":
+        if self.kind == "cross":
             return q.join(pika_table, pypika.enums.JoinType.cross).cross()
+        assert self.criterion is not None
+        if self.kind == "inner":
+            return q.join(pika_table).on(self.criterion.to_pypika(params, dialect))
+        elif self.kind == "left":
+            return q.left_join(pika_table).on(self.criterion.to_pypika(params, dialect))
+        elif self.kind == "right":
+            return q.right_join(pika_table).on(self.criterion.to_pypika(params, dialect))
         return q
 
 
@@ -76,9 +80,9 @@ class InsertQuery:
     source: pypika.Table
     rows: tuple[dict[str, Any], ...]
     is_many: bool = False
-    returning_fields: "tuple[NormField[Any], ...]" = dc_field(default_factory=tuple)
+    returning_fields: tuple[NormField[Any], ...] = dc_field(default_factory=tuple)
 
-    def returning(self, *fields: "NormField[Any]") -> "InsertQuery":
+    def returning(self, *fields: NormField[Any]) -> InsertQuery:
         return InsertQuery(
             source=self.source, rows=self.rows,
             is_many=self.is_many, returning_fields=fields,
@@ -105,10 +109,10 @@ class InsertQuery:
 @dataclass(frozen=True)
 class UpdateQuery:
     source: pypika.Table
-    assignments: "tuple[tuple[str, Any], ...]"
-    filters: "tuple[Filter, ...]" = dc_field(default_factory=tuple)
+    assignments: tuple[tuple[str, Any], ...]
+    filters: tuple[Filter, ...] = dc_field(default_factory=tuple)
 
-    def where(self, filter: "Filter") -> "UpdateQuery":
+    def where(self, filter: Filter) -> UpdateQuery:
         return UpdateQuery(
             source=self.source, assignments=self.assignments,
             filters=self.filters + (filter,),
@@ -133,9 +137,9 @@ class UpdateQuery:
 @dataclass(frozen=True)
 class DeleteQuery:
     source: pypika.Table
-    filters: "tuple[Filter, ...]" = dc_field(default_factory=tuple)
+    filters: tuple[Filter, ...] = dc_field(default_factory=tuple)
 
-    def where(self, filter: "Filter") -> "DeleteQuery":
+    def where(self, filter: Filter) -> DeleteQuery:
         return DeleteQuery(
             source=self.source,
             filters=self.filters + (filter,),

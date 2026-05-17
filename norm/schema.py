@@ -1,7 +1,7 @@
 
 import re
 import typing
-from typing import Any, ClassVar, Generic, TYPE_CHECKING, TypeVar, cast, overload
+from typing import Any, ClassVar, Generic, Self, TypeVar, cast, overload
 
 import pypika
 import pypika.enums
@@ -9,12 +9,10 @@ import pypika.functions
 import pypika.terms
 from pypika.utils import format_alias_sql, format_quotes
 
+from .filter import Filter, AnyFilter
 from .model import FieldDef, TableMeta
 from .dialect import Dialect, PostgresDialect
-
-if TYPE_CHECKING:
-    from .filter import Filter, AnyFilter
-    from .query import InsertQuery, UpdateQuery, DeleteQuery
+from .query import InsertQuery, UpdateQuery, DeleteQuery, JoinClause
 
 
 _QUERY_STATE_KEYS: tuple[str, ...] = (
@@ -78,7 +76,7 @@ class NamespacedField(pypika.terms.Field):
         return field_sql
 
 T = TypeVar("T")
-_EntityT = TypeVar("_EntityT", bound="Entity")
+# _EntityT = TypeVar("_EntityT", bound=Entity)
 
 
 class Field(Generic[T]):
@@ -106,61 +104,61 @@ class Field(Generic[T]):
     def __get__(self, obj: Any, objtype: Any = None) -> Any:
         return self
 
-    def __eq__(self, other: Any) -> "Filter":  # type: ignore[override]
+    def __eq__(self, other: Any) -> Any:
         from .filter import Filter
         if isinstance(other, Field):
             return Filter(field=self, value=other, op="col_eq")
         return Filter(field=self, value=other)
 
-    def __ne__(self, other: Any) -> "Filter":  # type: ignore[override]
+    def __ne__(self, other: Any) -> Any:
         from .filter import Filter
         return Filter(field=self, value=other, op="ne")
 
-    def __lt__(self, other: Any) -> "Filter":
+    def __lt__(self, other: Any) -> Filter:
         from .filter import Filter
         return Filter(field=self, value=other, op="lt")
 
-    def __le__(self, other: Any) -> "Filter":
+    def __le__(self, other: Any) -> Filter:
         from .filter import Filter
         return Filter(field=self, value=other, op="lte")
 
-    def __gt__(self, other: Any) -> "Filter":
+    def __gt__(self, other: Any) -> Filter:
         from .filter import Filter
         return Filter(field=self, value=other, op="gt")
 
-    def __ge__(self, other: Any) -> "Filter":
+    def __ge__(self, other: Any) -> Filter:
         from .filter import Filter
         return Filter(field=self, value=other, op="gte")
 
-    def like(self, pattern: str) -> "Filter":
+    def like(self, pattern: str) -> Filter:
         from .filter import Filter
         return Filter(field=self, value=pattern, op="like")
 
-    def ilike(self, pattern: str) -> "Filter":
+    def ilike(self, pattern: str) -> Filter:
         from .filter import Filter
         return Filter(field=self, value=pattern, op="ilike")
 
-    def isin(self, values: list[Any]) -> "Filter":
+    def isin(self, values: list[Any]) -> Filter:
         from .filter import Filter
         return Filter(field=self, value=tuple(values), op="in")
 
-    def notin(self, values: list[Any]) -> "Filter":
+    def notin(self, values: list[Any]) -> Filter:
         from .filter import Filter
         return Filter(field=self, value=tuple(values), op="notin")
 
-    def isnull(self) -> "Filter":
+    def isnull(self) -> Filter:
         from .filter import Filter
         return Filter(field=self, value=None, op="null")
 
-    def isnotnull(self) -> "Filter":
+    def isnotnull(self) -> Filter:
         from .filter import Filter
         return Filter(field=self, value=None, op="notnull")
 
-    def between(self, lo: Any, hi: Any) -> "Filter":
+    def between(self, lo: Any, hi: Any) -> Filter:
         from .filter import Filter
         return Filter(field=self, value=(lo, hi), op="between")
 
-    def as_(self, alias: str) -> "Field[T]":
+    def as_(self, alias: str) -> Field[T]:
         new = cast("Field[T]", Field.__new__(Field))
         object.__setattr__(new, "column_name", self.column_name)
         object.__setattr__(new, "python_type", self.python_type)
@@ -168,43 +166,43 @@ class Field(Generic[T]):
         object.__setattr__(new, "pika_field", self.pika_field.as_(alias))
         return new
 
-    def count(self, distinct: bool = False) -> "Field[int]":
+    def count(self, distinct: bool = False) -> Field[int]:
         term = pypika.functions.Count(self.pika_field)
         if distinct:
             term = term.distinct()
         return _AggField(int, term)
 
-    def sum(self) -> "Field[T]":
+    def sum(self) -> Field[T]:
         return _AggField(self.python_type, pypika.functions.Sum(self.pika_field))
 
-    def min(self) -> "Field[T]":
+    def min(self) -> Field[T]:
         return _AggField(self.python_type, pypika.functions.Min(self.pika_field))
 
-    def max(self) -> "Field[T]":
+    def max(self) -> Field[T]:
         return _AggField(self.python_type, pypika.functions.Max(self.pika_field))
 
-    def avg(self) -> "Field[float]":
+    def avg(self) -> Field[float]:
         return _AggField(float, pypika.functions.Avg(self.pika_field))
 
-    def coalesce(self, default: Any) -> "Field[T]":
+    def coalesce(self, default: Any) -> Field[T]:
         return _CoalesceField(self, default)
 
-    def cast(self, sql_type: str) -> "Field[Any]":
+    def cast(self, sql_type: str) -> Field[Any]:
         return _AggField(type(None), pypika.functions.Cast(self.pika_field, sql_type))
 
     def to_column(self, params: list[Any], dialect: Any) -> Any:
         return self.pika_field
 
-    def __add__(self, other: Any) -> "Field[Any]":
+    def __add__(self, other: Any) -> Field[Any]:
         return _arith_field(self, "+", other)
 
-    def __sub__(self, other: Any) -> "Field[Any]":
+    def __sub__(self, other: Any) -> Field[Any]:
         return _arith_field(self, "-", other)
 
-    def __mul__(self, other: Any) -> "Field[Any]":
+    def __mul__(self, other: Any) -> Field[Any]:
         return _arith_field(self, "*", other)
 
-    def __truediv__(self, other: Any) -> "Field[Any]":
+    def __truediv__(self, other: Any) -> Field[Any]:
         return _arith_field(self, "/", other)
 
     def __hash__(self) -> int:
@@ -213,12 +211,16 @@ class Field(Generic[T]):
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self.column_name!r})"
 
-    def __setattr__(self, name: str, value: Any) -> None:  # type: ignore[override]
+    def __setattr__(self, name: str, value: Any) -> None:
         raise AttributeError(f"cannot set '{name}' on {type(self).__name__}")
 
 
 class _ArithField(Field[Any]):
-    def __init__(self, left: "Field[Any]", op: str, right: Any) -> None:
+    _left: Field[Any]
+    _op: str
+    _right: Any
+
+    def __init__(self, left: Field[Any], op: str, right: Any) -> None:
         object.__setattr__(self, "column_name", left.column_name)
         object.__setattr__(self, "python_type", left.python_type)
         object.__setattr__(self, "field_def", left.field_def)
@@ -228,9 +230,9 @@ class _ArithField(Field[Any]):
         object.__setattr__(self, "_right", right)
 
     def to_column(self, params: list[Any], dialect: Any) -> Any:
-        left_term = self._left.to_column(params, dialect)  # type: ignore[attr-defined]
-        right = self._right  # type: ignore[attr-defined]
-        op = self._op  # type: ignore[attr-defined]
+        left_term = self._left.to_column(params, dialect)
+        right = self._right
+        op = self._op
         if isinstance(right, Field):
             right_term = right.pika_field
         else:
@@ -241,7 +243,7 @@ class _ArithField(Field[Any]):
         return ops[op]
 
 
-def _arith_field(left: "Field[Any]", op: str, right: Any) -> "_ArithField":
+def _arith_field(left: Field[Any], op: str, right: Any) -> _ArithField:
     return _ArithField(left, op, right)
 
 
@@ -257,17 +259,17 @@ class _AggField(Field[T]):
     def to_column(self, params: list[Any], dialect: Any) -> Any:
         return self.pika_field
 
-    def as_(self, alias: str) -> "Field[T]":
+    def as_(self, alias: str) -> Field[T]:
         return _AggField(self.python_type, self.pika_field.as_(alias))
 
 
 class _CoalesceField(Field[T]):
     """COALESCE(col, default) — default is bound as a parameter at build time."""
 
-    _source: "Field[T]"
+    _source: Field[T]
     _default: Any
 
-    def __init__(self, source: "Field[T]", default: Any) -> None:
+    def __init__(self, source: Field[T], default: Any) -> None:
         object.__setattr__(self, "column_name", source.column_name)
         object.__setattr__(self, "python_type", source.python_type)
         object.__setattr__(self, "field_def", source.field_def)
@@ -275,17 +277,19 @@ class _CoalesceField(Field[T]):
         object.__setattr__(self, "_source", source)
         object.__setattr__(self, "_default", default)
 
-    def as_(self, alias: str) -> "Field[T]":
+    def as_(self, alias: str) -> Field[T]:
         source: Field[T] = object.__getattribute__(self, "_source")
         default: Any = object.__getattribute__(self, "_default")
         new = _CoalesceField(source, default)
         object.__setattr__(new, "_alias", alias)
         return new
 
-    def to_column(self, params: list[Any], dialect: Any) -> Any:  # type: ignore[override]
-        params.append(self._default)  # type: ignore[attr-defined]
+    def to_column(self, params: list[Any], dialect: Any) -> Any:
+        default: Any = object.__getattribute__(self, "_default")
+        source: Field[Any] = object.__getattribute__(self, "_source")
+        params.append(default)
         default_term = pypika.terms.Parameter(dialect.placeholder(len(params)))
-        term = pypika.functions.Coalesce(self._source.pika_field, default_term)  # type: ignore[attr-defined]
+        term = pypika.functions.Coalesce(source.pika_field, default_term)
         alias = getattr(self, "_alias", None)
         if alias:
             return term.as_(alias)
@@ -373,7 +377,7 @@ def _parse_fields(model: type) -> list[tuple[str, type, FieldDef, type[Field[Any
     return result
 
 
-def _setup_table(cls: type) -> None:
+def _setup_table(cls: Any) -> None:
     meta: TableMeta | None = getattr(cls, "__meta__", None)
     table_name = (meta.table if meta and meta.table else None) or _infer_table_name(cls.__name__)
     schema_name = (meta.schema if meta and meta.schema else None) or _infer_schema(getattr(cls, "__module__", "") or "")
@@ -389,8 +393,8 @@ def _setup_table(cls: type) -> None:
         setattr(cls, attr_name, proxy)
         field_proxies.append(proxy)
 
-    cls.__table__ = pika_table  # type: ignore[attr-defined]
-    cls.__fields__ = tuple(field_proxies)  # type: ignore[attr-defined]
+    cls.__table__ = pika_table
+    cls.__fields__ = tuple(field_proxies)
 
 
 class NormMeta(type):
@@ -414,25 +418,25 @@ class Entity(metaclass=NormMeta):
     __fields__: ClassVar[tuple[Field[Any], ...]]
 
     # Query state defaults — inherited by all subclasses and overridden per-clone
-    __columns__: ClassVar[tuple] = ()
-    __filters__: ClassVar[tuple] = ()
-    __orderings__: ClassVar[tuple] = ()
+    __columns__: ClassVar[tuple[Field[Any], ...]] = ()
+    __filters__: ClassVar[tuple[Filter, ...]] = ()
+    __orderings__: ClassVar[tuple[tuple[Field[Any], bool], ...]] = ()
     __row_limit__: ClassVar[int | None] = None
     __row_offset__: ClassVar[int | None] = None
     __is_distinct__: ClassVar[bool] = False
-    __joins__: ClassVar[tuple] = ()
-    __group_bys__: ClassVar[tuple] = ()
-    __havings__: ClassVar[tuple] = ()
+    __joins__: ClassVar[tuple[JoinClause, ...]] = ()
+    __group_bys__: ClassVar[tuple[Field[Any], ...]] = ()
+    __havings__: ClassVar[tuple[AnyFilter, ...]] = ()
     __alias__: ClassVar[str | None] = None
     __inner__: ClassVar[Any] = None
     __union_left__: ClassVar[Any] = None
     __union_right__: ClassVar[Any] = None
     __union_all__: ClassVar[bool] = False
-    __ctes__: ClassVar[tuple] = ()
+    __ctes__: ClassVar[tuple[Any, ...]] = ()
     __recursive__: ClassVar[bool] = False
 
     @classmethod
-    def clone(cls) -> type:
+    def clone(cls) -> type[Self]:
         """Create a shallow copy of this entity type, copying all query state."""
         ns: dict[str, Any] = {
             "__table__": cls.__table__,
@@ -443,10 +447,10 @@ class Entity(metaclass=NormMeta):
         for attr, val in vars(cls).items():
             if isinstance(val, Field):
                 ns[attr] = val
-        return NormMeta(cls.__name__, (cls,), ns)
+        return cast(type[Self], NormMeta(cls.__name__, (cls,), ns))
 
     @classmethod
-    def aliased(cls, alias: str) -> type:
+    def aliased(cls, alias: str) -> type[typing.Any]:
         """Return a renamed view of this entity.
 
         On a plain entity (no query state): creates a real table alias for self-joins.
@@ -484,70 +488,71 @@ class Entity(metaclass=NormMeta):
         else:
             # Real table alias: remap all field proxies to use the aliased pika table
             orig_table = cls.__table__
-            real_name: str = orig_table._table_name  # type: ignore[attr-defined]
-            schema_obj = orig_table._schema  # type: ignore[attr-defined]
-            pika_table = pypika.Table(real_name, schema=schema_obj).as_(alias)  # type: ignore[reportUnknownArgumentType, reportArgumentType]
+            real_name: str = getattr(orig_table, "_table_name", "")
+            schema_obj: Any = getattr(orig_table, "_schema", None)
+            pika_table = pypika.Table(real_name, schema=schema_obj).as_(alias)
             ns["__table__"] = pika_table
             ns["__inner__"] = None
             new_fields = []
             for attr, val in vars(cls).items():
                 if isinstance(val, Field):
-                    new_pika = NamespacedField(val.column_name, table=pika_table)
-                    new_proxy: Field[Any] = type(val)(val.column_name, val.python_type, val.field_def, new_pika)  # type: ignore[reportUnknownMemberType]
+                    fval = cast(Field[Any], val)
+                    new_pika = NamespacedField(fval.column_name, table=pika_table)
+                    new_proxy: Field[Any] = type(fval)(fval.column_name, fval.python_type, fval.field_def, new_pika)
                     ns[attr] = new_proxy
                     new_fields.append(new_proxy)
             ns["__fields__"] = tuple(new_fields)
 
-        return NormMeta(cls.__name__, (cls,), ns)
+        return cast(type[Self], NormMeta(cls.__name__, (cls,), ns))
 
 
 class Selectable(Entity):
     """Mixin that adds SELECT and query-building capability. Inherit via Table or View."""
 
     @classmethod
-    def select(cls, *proxies: "Field[Any]") -> type:
+    def select(cls, *proxies: Field[Any]) -> "type[Self]":
         q = cls.clone()
         q.__columns__ = proxies
         return q
 
     @classmethod
-    def select_all(cls) -> type:
+    def select_all(cls) -> type[Self]:
         q = cls.clone()
         q.__columns__ = cls.__fields__
         return q
 
     @classmethod
-    def where(cls, filter: "Filter") -> type:
+    def where(cls, filter: Filter) -> type[Self]:
         q = cls.clone()
         q.__filters__ = cls.__filters__ + (filter,)
         return q
 
     @classmethod
-    def order_by(cls, *fields: "Field[Any]", desc: bool = False) -> type:
+    def order_by(cls, *fields: Field[Any], desc: bool = False) -> type[Self]:
         q = cls.clone()
         q.__orderings__ = cls.__orderings__ + tuple((f, desc) for f in fields)
         return q
 
     @classmethod
-    def limit(cls, n: int) -> type:
+    def limit(cls, n: int) -> type[Self]:
         q = cls.clone()
         q.__row_limit__ = n
         return q
 
     @classmethod
-    def offset(cls, n: int) -> type:
+    def offset(cls, n: int) -> type[Self]:
         q = cls.clone()
         q.__row_offset__ = n
         return q
 
     @classmethod
-    def distinct(cls) -> type:
+    def distinct(cls) -> type[Self]:
         q = cls.clone()
         q.__is_distinct__ = True
         return q
 
     @classmethod
-    def join(cls, other: type, *, on: "AnyFilter") -> type:
+    def join(cls, other: type[Selectable], *, on: AnyFilter) -> type[Self]:
         from .query import JoinClause
         table = other if getattr(other, "__inner__", None) is not None else other.__table__
         q = cls.clone()
@@ -555,7 +560,7 @@ class Selectable(Entity):
         return q
 
     @classmethod
-    def left_join(cls, other: type, *, on: "AnyFilter") -> type:
+    def left_join(cls, other: type[Selectable], *, on: AnyFilter) -> type[Self]:
         from .query import JoinClause
         table = other if getattr(other, "__inner__", None) is not None else other.__table__
         q = cls.clone()
@@ -563,7 +568,7 @@ class Selectable(Entity):
         return q
 
     @classmethod
-    def right_join(cls, other: type, *, on: "AnyFilter") -> type:
+    def right_join(cls, other: type[Selectable], *, on: AnyFilter) -> type[Self]:
         from .query import JoinClause
         table = other if getattr(other, "__inner__", None) is not None else other.__table__
         q = cls.clone()
@@ -571,7 +576,7 @@ class Selectable(Entity):
         return q
 
     @classmethod
-    def cross_join(cls, other: type) -> type:
+    def cross_join(cls, other: type[Selectable]) -> type[Self]:
         from .query import JoinClause
         table = other if getattr(other, "__inner__", None) is not None else other.__table__
         q = cls.clone()
@@ -579,19 +584,19 @@ class Selectable(Entity):
         return q
 
     @classmethod
-    def group_by(cls, *proxies: "Field[Any]") -> type:
+    def group_by(cls, *proxies: Field[Any]) -> type[Self]:
         q = cls.clone()
         q.__group_bys__ = cls.__group_bys__ + proxies
         return q
 
     @classmethod
-    def having(cls, criterion: "AnyFilter") -> type:
+    def having(cls, criterion: AnyFilter) -> type[Self]:
         q = cls.clone()
         q.__havings__ = cls.__havings__ + (criterion,)
         return q
 
     @classmethod
-    def union(cls, other: type, *, all: bool = False) -> type:
+    def union(cls, other: type[Selectable], *, all: bool = False) -> type[Self]:
         """Return a new entity representing UNION [ALL] of this query and other."""
         ns: dict[str, Any] = {
             "__table__": cls.__table__,
@@ -605,7 +610,7 @@ class Selectable(Entity):
         for attr, val in vars(cls).items():
             if isinstance(val, Field):
                 ns[attr] = val
-        return NormMeta(cls.__name__, (cls,), ns)
+        return cast(type[Self], NormMeta(cls.__name__, (cls,), ns))
 
     @classmethod
     def as_scalar(cls) -> "Any":
@@ -668,14 +673,14 @@ class Writable(Entity):
     """Mixin that adds INSERT/UPDATE/DELETE capability. Inherit via Table, not directly."""
 
     @classmethod
-    def _default_columns(cls) -> "frozenset[str]":
+    def _default_columns(cls) -> frozenset[str]:
         return frozenset(
             f.column_name for f in cls.__fields__
             if f.field_def.db_default or f.field_def.primary_key
         )
 
     @classmethod
-    def insert(cls, rows: "list[dict[str, Any]] | None" = None, *, exclude_defaults: bool = True, **kwargs: Any) -> "InsertQuery":
+    def insert(cls, rows: "list[dict[str, Any]] | None" = None, *, exclude_defaults: bool = True, **kwargs: Any) -> InsertQuery:
         from .query import InsertQuery
         excluded = cls._default_columns() if exclude_defaults else frozenset[str]()
         if rows is not None:
@@ -690,7 +695,7 @@ class Writable(Entity):
         return InsertQuery(source=cls.__table__, rows=(row,), is_many=False)
 
     @classmethod
-    def update(cls, **assignments: Any) -> "UpdateQuery":
+    def update(cls, **assignments: Any) -> UpdateQuery:
         from .query import UpdateQuery
         col_assignments = tuple(
             (getattr(cls, attr).column_name, value)
@@ -699,7 +704,7 @@ class Writable(Entity):
         return UpdateQuery(source=cls.__table__, assignments=col_assignments)
 
     @classmethod
-    def delete(cls) -> "DeleteQuery":
+    def delete(cls) -> DeleteQuery:
         from .query import DeleteQuery
         return DeleteQuery(source=cls.__table__)
 

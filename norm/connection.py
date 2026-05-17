@@ -5,7 +5,6 @@ from typing import Any, TypeVar, overload
 import msgspec
 
 from .dialect import Dialect, PostgresDialect
-from .query import InsertQuery, UpdateQuery, DeleteQuery
 
 T = TypeVar("T")
 

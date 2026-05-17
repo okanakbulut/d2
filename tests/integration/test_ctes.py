@@ -50,7 +50,7 @@ async def test_named_cte_filters_root_employees(pg_conn: Any) -> None:
     roots = (
         Employees.select(Employees.id, Employees.name)
         .where(Employees.manager_id.isnull())
-        .as_view("roots")
+        .aliased("roots")
     )
     q = With(
         roots,
@@ -71,12 +71,12 @@ async def test_recursive_cte_subtree_under_mid_node(pg_conn: Any) -> None:
         Employees.select(Employees.id, Employees.name, Employees.manager_id)
         .where(Employees.id == 2)
     )
-    bob_tree_ref = anchor.as_view("bob_tree")
+    bob_tree_ref = anchor.aliased("bob_tree")
     step = (
         Employees.select(Employees.id, Employees.name, Employees.manager_id)
         .join(bob_tree_ref, on=Employees.manager_id == bob_tree_ref.id)
     )
-    bob_tree = anchor.union(step, all=True).as_view("bob_tree")
+    bob_tree = anchor.union(step, all=True).aliased("bob_tree")
     q = With(
         bob_tree,
         query=(
@@ -97,12 +97,12 @@ async def test_recursive_cte_returns_full_subtree(pg_conn: Any) -> None:
         Employees.select(Employees.id, Employees.name, Employees.manager_id)
         .where(Employees.id == 1)
     )
-    org_cte_ref = anchor.as_view("org_cte")
+    org_cte_ref = anchor.aliased("org_cte")
     step = (
         Employees.select(Employees.id, Employees.name, Employees.manager_id)
         .join(org_cte_ref, on=Employees.manager_id == org_cte_ref.id)
     )
-    org_cte = anchor.union(step, all=True).as_view("org_cte")
+    org_cte = anchor.union(step, all=True).aliased("org_cte")
     q = With(
         org_cte,
         query=(

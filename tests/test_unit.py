@@ -162,15 +162,15 @@ class TestFieldPredicates:
 # ---------------------------------------------------------------------------
 
 class TestQueryBuilder:
-    def test_select_returns_query_builder(self):
-        from norm.query import QueryBuilder
+    def test_select_returns_entity_type(self):
         q = Users.select(Users.id, Users.name, Users.email)
-        assert isinstance(q, QueryBuilder)
+        assert isinstance(q, type)
+        assert issubclass(q, Users)
 
-    def test_select_all_returns_query_builder(self):
-        from norm.query import QueryBuilder
+    def test_select_all_returns_entity_type(self):
         q = Users.select_all()
-        assert isinstance(q, QueryBuilder)
+        assert isinstance(q, type)
+        assert issubclass(q, Users)
 
     def test_where_returns_new_query_builder(self):
         base = Users.select(Users.id)
@@ -184,10 +184,10 @@ class TestQueryBuilder:
         assert sql == 'SELECT "users"."id" FROM "public"."users"'
         assert params == ()
 
-    def test_query_builder_is_immutable(self):
+    def test_original_filters_unchanged_after_where(self):
         q = Users.select(Users.id)
-        with pytest.raises(AttributeError):
-            q.filters = ()  # type: ignore[misc]
+        q.where(Users.id == 1)
+        assert q.__filters__ == ()
 
     def test_build_select_columns(self):
         sql, params = Users.select(Users.id, Users.name, Users.email).build()

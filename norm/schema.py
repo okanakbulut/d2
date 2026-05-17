@@ -4,15 +4,56 @@ import typing
 from typing import Any, ClassVar, Generic, TYPE_CHECKING, TypeVar, cast, overload
 
 import pypika
+import pypika.enums
 import pypika.functions
 import pypika.terms
 from pypika.utils import format_alias_sql, format_quotes
 
 from .model import FieldDef, TableMeta
+from .dialect import Dialect, PostgresDialect
 
 if TYPE_CHECKING:
-    from .filter import Filter
-    from .query import InsertQuery, QueryBuilder, UpdateQuery, DeleteQuery
+    from .filter import Filter, AnyFilter
+    from .query import InsertQuery, UpdateQuery, DeleteQuery
+
+
+_QUERY_STATE_KEYS: tuple[str, ...] = (
+    "__columns__",
+    "__filters__",
+    "__orderings__",
+    "__row_limit__",
+    "__row_offset__",
+    "__is_distinct__",
+    "__joins__",
+    "__group_bys__",
+    "__havings__",
+    "__alias__",
+    "__inner__",
+    "__union_left__",
+    "__union_right__",
+    "__union_all__",
+    "__ctes__",
+    "__recursive__",
+)
+
+_DEFAULTS: dict[str, Any] = {
+    "__columns__": (),
+    "__filters__": (),
+    "__orderings__": (),
+    "__row_limit__": None,
+    "__row_offset__": None,
+    "__is_distinct__": False,
+    "__joins__": (),
+    "__group_bys__": (),
+    "__havings__": (),
+    "__alias__": None,
+    "__inner__": None,
+    "__union_left__": None,
+    "__union_right__": None,
+    "__union_all__": False,
+    "__ctes__": (),
+    "__recursive__": False,
+}
 
 
 class NamespacedField(pypika.terms.Field):
@@ -361,7 +402,7 @@ class NormMeta(type):
         **kwargs: Any,
     ) -> "NormMeta":
         cls = super().__new__(mcs, name, bases, namespace, **kwargs)
-        if any(isinstance(b, NormMeta) for b in bases):
+        if "__table__" not in namespace and any(isinstance(b, NormMeta) for b in bases):
             _setup_table(cls)
         return cls
 
@@ -372,54 +413,255 @@ class Entity(metaclass=NormMeta):
     __table__: ClassVar[pypika.Table]
     __fields__: ClassVar[tuple[Field[Any], ...]]
 
+    # Query state defaults — inherited by all subclasses and overridden per-clone
+    __columns__: ClassVar[tuple] = ()
+    __filters__: ClassVar[tuple] = ()
+    __orderings__: ClassVar[tuple] = ()
+    __row_limit__: ClassVar[int | None] = None
+    __row_offset__: ClassVar[int | None] = None
+    __is_distinct__: ClassVar[bool] = False
+    __joins__: ClassVar[tuple] = ()
+    __group_bys__: ClassVar[tuple] = ()
+    __havings__: ClassVar[tuple] = ()
+    __alias__: ClassVar[str | None] = None
+    __inner__: ClassVar[Any] = None
+    __union_left__: ClassVar[Any] = None
+    __union_right__: ClassVar[Any] = None
+    __union_all__: ClassVar[bool] = False
+    __ctes__: ClassVar[tuple] = ()
+    __recursive__: ClassVar[bool] = False
+
     @classmethod
-    def aliased(cls: "type[_EntityT]", alias: str) -> "type[_EntityT]":
-        orig_table: pypika.Table = cls.__table__
-        real_name: str = orig_table._table_name  # type: ignore[attr-defined]
-        schema_obj = orig_table._schema  # type: ignore[attr-defined]
-
-        pika_table = pypika.Table(real_name, schema=schema_obj).as_(alias)  # type: ignore[reportUnknownArgumentType, reportArgumentType]
-
-        field_overrides: dict[str, Any] = {}
-        new_fields: list[Field[Any]] = []
-        for attr_name, value in vars(cls).items():
-            if isinstance(value, Field):
-                new_pika = NamespacedField(value.column_name, table=pika_table)
-                new_proxy: Field[Any] = type(value)(value.column_name, value.python_type, value.field_def, new_pika)  # type: ignore[reportUnknownMemberType]
-                field_overrides[attr_name] = new_proxy
-                new_fields.append(new_proxy)
-
+    def clone(cls) -> type:
+        """Create a shallow copy of this entity type, copying all query state."""
         ns: dict[str, Any] = {
-            "__table__": pika_table,
-            "__fields__": tuple(new_fields),
-            **field_overrides,
+            "__table__": cls.__table__,
+            "__fields__": cls.__fields__,
         }
-        proxy = type.__new__(type, cls.__name__, (object,), ns)
-        proxy.select = classmethod(  # type: ignore[attr-defined]
-            lambda c, *proxies: __import__("norm.query", fromlist=["QueryBuilder"]).QueryBuilder(
-                source=c.__table__, columns=proxies  # type: ignore[attr-defined]
-            )
-        )
-        proxy.select_all = classmethod(  # type: ignore[attr-defined]
-            lambda c: __import__("norm.query", fromlist=["QueryBuilder"]).QueryBuilder(
-                source=c.__table__, columns=c.__fields__  # type: ignore[attr-defined]
-            )
-        )
-        return proxy  # type: ignore[return-value]
+        for key in _QUERY_STATE_KEYS:
+            ns[key] = getattr(cls, key, _DEFAULTS[key])
+        for attr, val in vars(cls).items():
+            if isinstance(val, Field):
+                ns[attr] = val
+        return NormMeta(cls.__name__, (cls,), ns)
+
+    @classmethod
+    def aliased(cls, alias: str) -> type:
+        """Return a renamed view of this entity.
+
+        On a plain entity (no query state): creates a real table alias for self-joins.
+        On a query chain (has columns or union): creates a subquery/CTE alias.
+        """
+        alias_table = pypika.Table(alias)
+        union_left = getattr(cls, "__union_left__", None)
+        has_query = union_left is not None or bool(getattr(cls, "__columns__", ()))
+
+        ns: dict[str, Any] = {"__table__": alias_table, "__fields__": ()}
+        for key in _QUERY_STATE_KEYS:
+            ns[key] = _DEFAULTS[key]
+        ns["__alias__"] = alias
+
+        if has_query:
+            # Subquery / CTE alias: store the original as __inner__ and remap projected columns
+            ns["__inner__"] = cls
+            if union_left is not None:
+                source_cols: tuple[Field[Any], ...] = (
+                    getattr(union_left, "__columns__", ()) or getattr(union_left, "__fields__", ())
+                )
+            else:
+                source_cols = cls.__columns__
+            new_fields: list[Field[Any]] = []
+            for col in source_cols:
+                col_alias = getattr(col.pika_field, "alias", None)
+                name: str = col_alias or col.column_name
+                if not name:
+                    continue
+                pika = NamespacedField(name, table=alias_table)
+                proxy = Field(name, col.python_type, col.field_def, pika)
+                ns[name] = proxy
+                new_fields.append(proxy)
+            ns["__fields__"] = tuple(new_fields)
+        else:
+            # Real table alias: remap all field proxies to use the aliased pika table
+            orig_table = cls.__table__
+            real_name: str = orig_table._table_name  # type: ignore[attr-defined]
+            schema_obj = orig_table._schema  # type: ignore[attr-defined]
+            pika_table = pypika.Table(real_name, schema=schema_obj).as_(alias)  # type: ignore[reportUnknownArgumentType, reportArgumentType]
+            ns["__table__"] = pika_table
+            ns["__inner__"] = None
+            new_fields = []
+            for attr, val in vars(cls).items():
+                if isinstance(val, Field):
+                    new_pika = NamespacedField(val.column_name, table=pika_table)
+                    new_proxy: Field[Any] = type(val)(val.column_name, val.python_type, val.field_def, new_pika)  # type: ignore[reportUnknownMemberType]
+                    ns[attr] = new_proxy
+                    new_fields.append(new_proxy)
+            ns["__fields__"] = tuple(new_fields)
+
+        return NormMeta(cls.__name__, (cls,), ns)
 
 
 class Selectable(Entity):
-    """Mixin that adds SELECT capability. Inherit via Table or View, not directly."""
+    """Mixin that adds SELECT and query-building capability. Inherit via Table or View."""
 
     @classmethod
-    def select(cls, *proxies: "Field[Any]") -> "QueryBuilder":
-        from .query import QueryBuilder
-        return QueryBuilder(source=cls.__table__, columns=proxies)
+    def select(cls, *proxies: "Field[Any]") -> type:
+        q = cls.clone()
+        q.__columns__ = proxies
+        return q
 
     @classmethod
-    def select_all(cls) -> "QueryBuilder":
-        from .query import QueryBuilder
-        return QueryBuilder(source=cls.__table__, columns=cls.__fields__)
+    def select_all(cls) -> type:
+        q = cls.clone()
+        q.__columns__ = cls.__fields__
+        return q
+
+    @classmethod
+    def where(cls, filter: "Filter") -> type:
+        q = cls.clone()
+        q.__filters__ = cls.__filters__ + (filter,)
+        return q
+
+    @classmethod
+    def order_by(cls, *fields: "Field[Any]", desc: bool = False) -> type:
+        q = cls.clone()
+        q.__orderings__ = cls.__orderings__ + tuple((f, desc) for f in fields)
+        return q
+
+    @classmethod
+    def limit(cls, n: int) -> type:
+        q = cls.clone()
+        q.__row_limit__ = n
+        return q
+
+    @classmethod
+    def offset(cls, n: int) -> type:
+        q = cls.clone()
+        q.__row_offset__ = n
+        return q
+
+    @classmethod
+    def distinct(cls) -> type:
+        q = cls.clone()
+        q.__is_distinct__ = True
+        return q
+
+    @classmethod
+    def join(cls, other: type, *, on: "AnyFilter") -> type:
+        from .query import JoinClause
+        table = other if getattr(other, "__inner__", None) is not None else other.__table__
+        q = cls.clone()
+        q.__joins__ = cls.__joins__ + (JoinClause(table, on, "inner"),)
+        return q
+
+    @classmethod
+    def left_join(cls, other: type, *, on: "AnyFilter") -> type:
+        from .query import JoinClause
+        table = other if getattr(other, "__inner__", None) is not None else other.__table__
+        q = cls.clone()
+        q.__joins__ = cls.__joins__ + (JoinClause(table, on, "left"),)
+        return q
+
+    @classmethod
+    def right_join(cls, other: type, *, on: "AnyFilter") -> type:
+        from .query import JoinClause
+        table = other if getattr(other, "__inner__", None) is not None else other.__table__
+        q = cls.clone()
+        q.__joins__ = cls.__joins__ + (JoinClause(table, on, "right"),)
+        return q
+
+    @classmethod
+    def cross_join(cls, other: type) -> type:
+        from .query import JoinClause
+        table = other if getattr(other, "__inner__", None) is not None else other.__table__
+        q = cls.clone()
+        q.__joins__ = cls.__joins__ + (JoinClause(table, None, "cross"),)
+        return q
+
+    @classmethod
+    def group_by(cls, *proxies: "Field[Any]") -> type:
+        q = cls.clone()
+        q.__group_bys__ = cls.__group_bys__ + proxies
+        return q
+
+    @classmethod
+    def having(cls, criterion: "AnyFilter") -> type:
+        q = cls.clone()
+        q.__havings__ = cls.__havings__ + (criterion,)
+        return q
+
+    @classmethod
+    def union(cls, other: type, *, all: bool = False) -> type:
+        """Return a new entity representing UNION [ALL] of this query and other."""
+        ns: dict[str, Any] = {
+            "__table__": cls.__table__,
+            "__fields__": getattr(cls, "__columns__", ()) or cls.__fields__,
+        }
+        for key in _QUERY_STATE_KEYS:
+            ns[key] = _DEFAULTS[key]
+        ns["__union_left__"] = cls
+        ns["__union_right__"] = other
+        ns["__union_all__"] = all
+        for attr, val in vars(cls).items():
+            if isinstance(val, Field):
+                ns[attr] = val
+        return NormMeta(cls.__name__, (cls,), ns)
+
+    @classmethod
+    def as_scalar(cls) -> "Any":
+        from .query import ScalarSubquery
+        return ScalarSubquery(inner=cls)
+
+    @classmethod
+    def as_pypika(cls, params: list[Any], dialect: Dialect, cte_names: frozenset[str] = frozenset()) -> Any:
+        pika_cols = [col.to_column(params, dialect) for col in cls.__columns__]
+        q = pypika.Query.from_(cls.__table__).select(*pika_cols)
+        if cls.__is_distinct__:
+            q = q.distinct()
+        for jc in cls.__joins__:
+            q = jc.apply_to(q, params, dialect, cte_names)
+        for f in cls.__filters__:
+            q = q.where(f.to_pypika(params, dialect))
+        for field, is_desc in cls.__orderings__:
+            order = pypika.enums.Order.desc if is_desc else pypika.enums.Order.asc
+            q = q.orderby(field.pika_field, order=order)
+        for gb in cls.__group_bys__:
+            q = q.groupby(gb.pika_field)
+        for h in cls.__havings__:
+            q = q.having(h.to_pypika(params, dialect))
+        if cls.__row_limit__ is not None:
+            q = q.limit(cls.__row_limit__)
+        if cls.__row_offset__ is not None:
+            q = q.offset(cls.__row_offset__)
+        return q
+
+    @classmethod
+    def build(cls, dialect: Dialect = PostgresDialect()) -> tuple[str, tuple[Any, ...]]:
+        if cls.__ctes__:
+            return cls._build_with(dialect)
+        params: list[Any] = []
+        sql = cls.as_pypika(params, dialect).get_sql(quote_char='"')
+        return sql, tuple(params)
+
+    @classmethod
+    def _build_with(cls, dialect: Dialect = PostgresDialect()) -> tuple[str, tuple[Any, ...]]:
+        params: list[Any] = []
+        cte_names = frozenset(v.__alias__ for v in cls.__ctes__)
+        cte_parts: list[str] = []
+        for view in cls.__ctes__:
+            inner = view.__inner__
+            union_left = getattr(inner, "__union_left__", None)
+            if union_left is not None:
+                left_sql = union_left.as_pypika(params, dialect, cte_names).get_sql(quote_char='"')
+                right_sql = inner.__union_right__.as_pypika(params, dialect, cte_names).get_sql(quote_char='"')
+                union_kw = "UNION ALL" if inner.__union_all__ else "UNION"
+                body_sql = f"{left_sql} {union_kw} {right_sql}"
+            else:
+                body_sql = inner.as_pypika(params, dialect, cte_names).get_sql(quote_char='"')
+            cte_parts.append(f'"{view.__alias__}" AS ({body_sql})')
+        main_sql = cls.as_pypika(params, dialect, cte_names).get_sql(quote_char='"')
+        prefix = "WITH RECURSIVE " if cls.__recursive__ else "WITH "
+        return prefix + ", ".join(cte_parts) + " " + main_sql, tuple(params)
 
 
 class Writable(Entity):
@@ -468,5 +710,3 @@ class Table(Selectable, Writable):
 
 class View(Selectable):
     """Read-only database view or table."""
-
-

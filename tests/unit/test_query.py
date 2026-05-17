@@ -1,19 +1,22 @@
-"""Unit tests for QueryBuilder: select, where, order_by, limit, offset, distinct,
+"""Unit tests for query building: select, where, order_by, limit, offset, distinct,
 column aliasing, arithmetic expressions, and insert."""
 
 import pytest
 
-from norm.query import QueryBuilder
 from norm.schema import Field
 from .conftest import Users, UserModelExplicit
 
 
 class TestSelect:
-    def test_select_returns_query_builder(self):
-        assert isinstance(Users.select(Users.id, Users.name, Users.email), QueryBuilder)
+    def test_select_returns_entity_type(self):
+        result = Users.select(Users.id, Users.name, Users.email)
+        assert isinstance(result, type)
+        assert issubclass(result, Users)
 
-    def test_select_all_returns_query_builder(self):
-        assert isinstance(Users.select_all(), QueryBuilder)
+    def test_select_all_returns_entity_type(self):
+        result = Users.select_all()
+        assert isinstance(result, type)
+        assert issubclass(result, Users)
 
     def test_build_select_columns(self):
         sql, params = Users.select(Users.id, Users.name, Users.email).build()
@@ -32,7 +35,7 @@ class TestSelect:
 
 
 class TestWhere:
-    def test_where_returns_new_query_builder(self):
+    def test_where_returns_new_entity(self):
         base = Users.select(Users.id)
         assert base is not base.where(Users.id == 1)
 
@@ -43,10 +46,10 @@ class TestWhere:
         assert sql == 'SELECT "users"."id" FROM "public"."users"'
         assert params == ()
 
-    def test_query_builder_is_immutable(self):
+    def test_original_filters_unchanged_after_where(self):
         q = Users.select(Users.id)
-        with pytest.raises(AttributeError):
-            q.filters = ()  # type: ignore[misc]
+        q.where(Users.id == 1)
+        assert q.__filters__ == ()
 
     def test_single_where(self):
         sql, params = Users.select(Users.id).where(Users.id == 42).build()

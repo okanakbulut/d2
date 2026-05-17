@@ -5,11 +5,12 @@ from typing import Any, TypeVar, overload
 import msgspec
 
 from .dialect import Dialect, PostgresDialect
-from .query import InsertQuery, QueryBuilder, UpdateQuery, DeleteQuery, With
-
-AnyQuery = QueryBuilder | InsertQuery | UpdateQuery | DeleteQuery | With
+from .query import InsertQuery, UpdateQuery, DeleteQuery
 
 T = TypeVar("T")
+
+# AnyQuery covers Entity clone types (with .build() classmethod) and the mutable query objects
+AnyQuery = Any
 
 
 class AsyncConnection:
@@ -33,7 +34,7 @@ class AsyncConnection:
             return None
         return msgspec.convert(dict(row), result_type)
 
-    async def fetch_val(self, qb: QueryBuilder) -> Any:
+    async def fetch_val(self, qb: AnyQuery) -> Any:
         sql, params = qb.build(self._dialect)
         return await self._conn.fetchval(sql, *params)
 

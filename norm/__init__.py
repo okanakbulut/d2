@@ -11,7 +11,7 @@ from .schema import (
     Table,
     View,
 )
-from .query import QueryBuilder, With
+from .query import With
 from .dialect import Dialect, PostgresDialect
 from .connection import AsyncConnection
 
@@ -29,7 +29,6 @@ __all__ = [
     "Writable",
     "Table",
     "View",
-    "QueryBuilder",
     "With",
     "Dialect",
     "PostgresDialect",

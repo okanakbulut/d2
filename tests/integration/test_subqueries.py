@@ -1,5 +1,5 @@
 # pyright: basic
-"""Integration tests for subquery features: as_view() and as_scalar()."""
+"""Integration tests for subquery features: aliased subqueries and as_scalar()."""
 
 from typing import Any
 
@@ -65,7 +65,7 @@ async def test_join_against_grouped_subquery(pg_conn: Any) -> None:
         SubqOrders
         .select(SubqOrders.user_id, SubqOrders.amount.sum().as_("total"))
         .group_by(SubqOrders.user_id)
-        .as_view("rev")
+        .aliased("rev")
     )
     q = (
         SubqUsers

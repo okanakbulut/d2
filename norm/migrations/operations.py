@@ -77,3 +77,20 @@ class CreateTable:
     def apply(self, state: SchemaState) -> None:
         cols = {name: cd.to_column_state() for name, cd in self.columns.items()}
         state.tables[self.table] = TableState(columns=cols, schema=self.schema)
+
+
+@dataclass
+class DropTable:
+    table: str
+    schema: str | None = None
+
+    def _qualified(self) -> str:
+        if self.schema:
+            return f'"{self.schema}"."{self.table}"'
+        return f'"{self.table}"'
+
+    def to_ddl(self) -> str:
+        return f"DROP TABLE IF EXISTS {self._qualified()}"
+
+    def apply(self, state: SchemaState) -> None:
+        state.tables.pop(self.table, None)

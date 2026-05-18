@@ -10,6 +10,7 @@ class FieldDef:
     index: bool = False
     unique: bool = False
     name: str | None = None
+    nullable: bool = False
 
 
 def field(*, db_default: bool = False, name: str | None = None) -> Any:

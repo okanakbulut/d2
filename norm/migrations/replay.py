@@ -1,11 +1,13 @@
-"""Minimal migration file loader for the tracer slice."""
+"""Migration file loading and replay-into-SchemaState."""
 
 from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+from typing import Iterable
 
 from . import Migration
+from .state import SchemaState
 
 
 def _load_migration(path: Path) -> type[Migration]:
@@ -31,3 +33,16 @@ def _load_migration(path: Path) -> type[Migration]:
             f"migration file {path} does not define a Migration subclass"
         )
     return candidate
+
+
+def replay_migrations(paths: Iterable[Path]) -> SchemaState:
+    """Apply each migration's operations onto a fresh `SchemaState`.
+
+    Paths are applied in lexicographic order of their filenames.
+    """
+    state = SchemaState()
+    for path in sorted(paths, key=lambda p: p.name):
+        mig_cls = _load_migration(path)
+        for op in mig_cls.operations:
+            op.apply(state)
+    return state

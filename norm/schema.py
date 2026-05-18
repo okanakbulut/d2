@@ -1,5 +1,6 @@
 
 import re
+import types
 import typing
 from enum import Enum
 from typing import Any, ClassVar, Generic, Self, TypeVar, cast, overload
@@ -450,9 +451,17 @@ def _parse_fields(model: type) -> list[tuple[str, type, FieldDef, type[Field[Any
             continue
 
         origin = typing.get_origin(hint)
+        nullable = False
         if origin is not None and isinstance(origin, type) and issubclass(origin, Field):
             args = typing.get_args(hint)
-            python_type: type = args[0] if args else type(None)
+            inner: Any = args[0] if args else type(None)
+            inner_origin = typing.get_origin(inner)
+            if inner_origin is typing.Union or inner_origin is types.UnionType:
+                union_args = [a for a in typing.get_args(inner) if a is not type(None)]
+                if len(union_args) != len(typing.get_args(inner)):
+                    nullable = True
+                inner = union_args[0] if union_args else type(None)
+            python_type: type = inner
             field_cls: type[Field[Any]] = cast("type[Field[Any]]", origin)
         elif isinstance(hint, type) and issubclass(hint, Field):
             python_type = type(None)
@@ -478,6 +487,7 @@ def _parse_fields(model: type) -> list[tuple[str, type, FieldDef, type[Field[Any
             index=index,
             db_default=db_default,
             name=col_name_override,
+            nullable=nullable,
         )
         result.append((attr_name, python_type, fd, field_cls))
 
@@ -502,6 +512,9 @@ def _setup_table(cls: Any) -> None:
 
     cls.__table__ = pika_table
     cls.__fields__ = tuple(field_proxies)
+
+    from .migrations.registry import _register
+    _register(cls)
 
 
 class NormMeta(type):

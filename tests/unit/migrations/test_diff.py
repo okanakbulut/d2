@@ -1,8 +1,19 @@
 """Unit tests for diff_states and DropTable op."""
 
 from norm.migrations.draft import diff_states
-from norm.migrations.operations import ColumnDef, CreateTable, DropTable
-from norm.migrations.state import SchemaState
+from norm.migrations.operations import (
+    AddColumn,
+    AlterColumnType,
+    ColumnDef,
+    CreateTable,
+    DropColumn,
+    DropColumnDefault,
+    DropColumnNotNull,
+    DropTable,
+    SetColumnDefault,
+    SetColumnNotNull,
+)
+from norm.migrations.state import ColumnState, SchemaState, TableState
 
 
 class TestDropTable:
@@ -65,4 +76,147 @@ class TestDiffStates:
                 schema=None,
                 columns={"id": ColumnDef(type="BIGINT", nullable=False, primary_key=True)},
             )
+        ]
+
+
+def _state_with(table_name: str, columns: dict, schema: str | None = "public") -> SchemaState:
+    state = SchemaState()
+    state.tables[table_name] = TableState(columns=dict(columns), schema=schema)
+    return state
+
+
+class TestDiffColumns:
+    def test_new_column_in_target_yields_add_and_reverse_drop(self):
+        current = _state_with("t", {"id": ColumnState(type="BIGINT", nullable=False)})
+        target = _state_with("t", {
+            "id": ColumnState(type="BIGINT", nullable=False),
+            "email": ColumnState(type="TEXT", nullable=False, default="''"),
+        })
+
+        forward, reverse = diff_states(current, target)
+        assert forward == [
+            AddColumn(
+                table="t",
+                column="email",
+                type="TEXT",
+                nullable=False,
+                default="''",
+                schema="public",
+            )
+        ]
+        assert reverse == [DropColumn(table="t", column="email", schema="public")]
+
+    def test_dropped_column_yields_drop_and_reverse_add_from_current(self):
+        current = _state_with("t", {
+            "id": ColumnState(type="BIGINT", nullable=False),
+            "legacy": ColumnState(type="TEXT", nullable=True, default="'old'"),
+        })
+        target = _state_with("t", {"id": ColumnState(type="BIGINT", nullable=False)})
+
+        forward, reverse = diff_states(current, target)
+        assert forward == [DropColumn(table="t", column="legacy", schema="public")]
+        assert reverse == [
+            AddColumn(
+                table="t",
+                column="legacy",
+                type="TEXT",
+                nullable=True,
+                default="'old'",
+                schema="public",
+            )
+        ]
+
+    def test_type_only_change_emits_only_alter_type(self):
+        current = _state_with("t", {"x": ColumnState(type="INTEGER", nullable=False, default="0")})
+        target = _state_with("t", {"x": ColumnState(type="BIGINT", nullable=False, default="0")})
+
+        forward, reverse = diff_states(current, target)
+        assert forward == [AlterColumnType(table="t", column="x", type="BIGINT", schema="public")]
+        assert reverse == [AlterColumnType(table="t", column="x", type="INTEGER", schema="public")]
+
+    def test_nullable_true_to_false_emits_set_not_null(self):
+        current = _state_with("t", {"x": ColumnState(type="TEXT", nullable=True)})
+        target = _state_with("t", {"x": ColumnState(type="TEXT", nullable=False)})
+
+        forward, reverse = diff_states(current, target)
+        assert forward == [SetColumnNotNull(table="t", column="x", schema="public")]
+        assert reverse == [DropColumnNotNull(table="t", column="x", schema="public")]
+
+    def test_nullable_false_to_true_emits_drop_not_null(self):
+        current = _state_with("t", {"x": ColumnState(type="TEXT", nullable=False)})
+        target = _state_with("t", {"x": ColumnState(type="TEXT", nullable=True)})
+
+        forward, reverse = diff_states(current, target)
+        assert forward == [DropColumnNotNull(table="t", column="x", schema="public")]
+        assert reverse == [SetColumnNotNull(table="t", column="x", schema="public")]
+
+    def test_default_added_emits_set_default(self):
+        current = _state_with("t", {"x": ColumnState(type="TEXT", nullable=True, default=None)})
+        target = _state_with("t", {"x": ColumnState(type="TEXT", nullable=True, default="'hi'")})
+
+        forward, reverse = diff_states(current, target)
+        assert forward == [SetColumnDefault(table="t", column="x", default="'hi'", schema="public")]
+        assert reverse == [DropColumnDefault(table="t", column="x", schema="public")]
+
+    def test_default_dropped_emits_drop_default_and_reverse_set(self):
+        current = _state_with("t", {"x": ColumnState(type="TEXT", nullable=True, default="'old'")})
+        target = _state_with("t", {"x": ColumnState(type="TEXT", nullable=True, default=None)})
+
+        forward, reverse = diff_states(current, target)
+        assert forward == [DropColumnDefault(table="t", column="x", schema="public")]
+        assert reverse == [SetColumnDefault(table="t", column="x", default="'old'", schema="public")]
+
+    def test_default_changed_emits_set_default_with_reverse_set(self):
+        current = _state_with("t", {"x": ColumnState(type="TEXT", nullable=True, default="'old'")})
+        target = _state_with("t", {"x": ColumnState(type="TEXT", nullable=True, default="'new'")})
+
+        forward, reverse = diff_states(current, target)
+        assert forward == [SetColumnDefault(table="t", column="x", default="'new'", schema="public")]
+        assert reverse == [SetColumnDefault(table="t", column="x", default="'old'", schema="public")]
+
+    def test_multi_field_change_emits_all_three_granular_ops(self):
+        current = _state_with("t", {
+            "x": ColumnState(type="INTEGER", nullable=True, default=None),
+        })
+        target = _state_with("t", {
+            "x": ColumnState(type="BIGINT", nullable=False, default="0"),
+        })
+
+        forward, reverse = diff_states(current, target)
+        assert forward == [
+            AlterColumnType(table="t", column="x", type="BIGINT", schema="public"),
+            SetColumnNotNull(table="t", column="x", schema="public"),
+            SetColumnDefault(table="t", column="x", default="0", schema="public"),
+        ]
+        assert reverse == [
+            AlterColumnType(table="t", column="x", type="INTEGER", schema="public"),
+            DropColumnNotNull(table="t", column="x", schema="public"),
+            DropColumnDefault(table="t", column="x", schema="public"),
+        ]
+
+    def test_unchanged_column_emits_nothing(self):
+        cols = {"id": ColumnState(type="BIGINT", nullable=False)}
+        forward, reverse = diff_states(_state_with("t", cols), _state_with("t", cols))
+        assert forward == []
+        assert reverse == []
+
+    def test_rename_is_not_auto_detected(self):
+        # A renamed column manifests as drop + add by diff (user must hand-edit).
+        current = _state_with("t", {
+            "id": ColumnState(type="BIGINT", nullable=False),
+            "old_name": ColumnState(type="TEXT", nullable=False),
+        })
+        target = _state_with("t", {
+            "id": ColumnState(type="BIGINT", nullable=False),
+            "new_name": ColumnState(type="TEXT", nullable=False),
+        })
+
+        forward, reverse = diff_states(current, target)
+        assert forward == [
+            AddColumn(table="t", column="new_name", type="TEXT", nullable=False, schema="public"),
+            DropColumn(table="t", column="old_name", schema="public"),
+        ]
+        assert reverse == [
+            DropColumn(table="t", column="new_name", schema="public"),
+            AddColumn(table="t", column="old_name", type="TEXT", nullable=False, schema="public"),
         ]

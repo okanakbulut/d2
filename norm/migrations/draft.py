@@ -16,16 +16,18 @@ from .operations import (
     ColumnDef,
     CreateIndex,
     CreateTable,
+    CreateView,
     DropColumn,
     DropColumnDefault,
     DropColumnNotNull,
     DropConstraint,
     DropIndex,
     DropTable,
+    DropView,
     SetColumnDefault,
     SetColumnNotNull,
 )
-from .state import ColumnState, SchemaState, TableState
+from .state import ColumnState, SchemaState, TableState, ViewState
 
 
 def _column_def_from_state(col: ColumnState) -> ColumnDef:
@@ -202,6 +204,8 @@ def diff_states(
         for idx in table.indexes:
             reverse.append(_create_index_from_state(name, table.schema, idx))
 
+    view_fwd, view_rev = _diff_views(current.views, target.views)
+
     for name in sorted(current_tables & target_tables):
         cur_t = current.tables[name]
         tgt_t = target.tables[name]
@@ -220,6 +224,54 @@ def diff_states(
         )
         forward.extend(idx_fwd)
         reverse.extend(idx_rev)
+
+    forward.extend(view_fwd)
+    reverse.extend(view_rev)
+
+    return forward, reverse
+
+
+def _create_view_from_state(name: str, view: ViewState) -> CreateView:
+    return CreateView(
+        name=name,
+        definition=view.definition,
+        schema=view.schema,
+        columns=view.columns,
+        replace=True,
+    )
+
+
+def _diff_views(
+    current: dict[str, ViewState], target: dict[str, ViewState]
+) -> tuple[list, list]:
+    forward: list = []
+    reverse: list = []
+
+    for name in sorted(set(target) - set(current)):
+        v = target[name]
+        forward.append(_create_view_from_state(name, v))
+        reverse.append(DropView(name=name, schema=v.schema))
+
+    for name in sorted(set(current) - set(target)):
+        v = current[name]
+        forward.append(DropView(name=name, schema=v.schema))
+        reverse.append(_create_view_from_state(name, v))
+
+    for name in sorted(set(current) & set(target)):
+        cur = current[name]
+        tgt = target[name]
+        if cur == tgt:
+            continue
+        if cur.columns != tgt.columns:
+            # Column list reshape — must DROP + CREATE.
+            forward.append(DropView(name=name, schema=tgt.schema))
+            forward.append(_create_view_from_state(name, tgt))
+            reverse.append(DropView(name=name, schema=cur.schema))
+            reverse.append(_create_view_from_state(name, cur))
+        else:
+            # Definition only — CREATE OR REPLACE.
+            forward.append(_create_view_from_state(name, tgt))
+            reverse.append(_create_view_from_state(name, cur))
 
     return forward, reverse
 

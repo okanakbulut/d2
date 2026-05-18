@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .state import ColumnState, SchemaError, SchemaState, TableState
+from .state import ColumnState, SchemaError, SchemaState, TableState, ViewState
 
 
 # SERIAL macro → underlying integer type. Per ADR-0004, state stores the
@@ -406,3 +406,39 @@ class DropIndex:
     def apply(self, state: SchemaState) -> None:
         for table in state.tables.values():
             table.indexes = [i for i in table.indexes if i.get("name") != self.name]
+
+
+@dataclass
+class CreateView:
+    name: str
+    definition: str
+    schema: str | None = None
+    columns: tuple[tuple[str, type], ...] = ()
+    replace: bool = True
+
+    def to_ddl(self) -> str:
+        head = "CREATE OR REPLACE VIEW" if self.replace else "CREATE VIEW"
+        return f"{head} {_qualify(self.schema, self.name)} AS {self.definition}"
+
+    def apply(self, state: SchemaState) -> None:
+        state.views[self.name] = ViewState(
+            definition=self.definition,
+            columns=tuple(self.columns),
+            schema=self.schema,
+        )
+
+
+@dataclass
+class DropView:
+    name: str
+    schema: str | None = None
+    cascade: bool = False
+
+    def to_ddl(self) -> str:
+        sql = f"DROP VIEW IF EXISTS {_qualify(self.schema, self.name)}"
+        if self.cascade:
+            sql += " CASCADE"
+        return sql
+
+    def apply(self, state: SchemaState) -> None:
+        state.views.pop(self.name, None)

@@ -11,12 +11,14 @@ from .operations import (
     ColumnDef,
     CreateIndex,
     CreateTable,
+    CreateView,
     DropColumn,
     DropColumnDefault,
     DropColumnNotNull,
     DropConstraint,
     DropIndex,
     DropTable,
+    DropView,
     RenameColumn,
     SetColumnDefault,
     SetColumnNotNull,
@@ -32,12 +34,14 @@ _SUPPORTED_OPS: tuple[type, ...] = (
     ColumnDef,
     CreateIndex,
     CreateTable,
+    CreateView,
     DropColumn,
     DropColumnDefault,
     DropColumnNotNull,
     DropConstraint,
     DropIndex,
     DropTable,
+    DropView,
     RenameColumn,
     SetColumnDefault,
     SetColumnNotNull,
@@ -205,6 +209,39 @@ def _format_create_index(op: CreateIndex, indent: str) -> str:
     )
 
 
+def _format_type(t: type) -> str:
+    mod = getattr(t, "__module__", "builtins")
+    name = getattr(t, "__qualname__", t.__name__)
+    if mod == "builtins":
+        return name
+    return f"{mod}.{name}"
+
+
+def _format_view_columns(cols: tuple[tuple[str, type], ...]) -> str:
+    if not cols:
+        return "()"
+    parts = [f"({_q(n)}, {_format_type(t)})" for n, t in cols]
+    if len(parts) == 1:
+        return f"({parts[0]},)"
+    return "(" + ", ".join(parts) + ")"
+
+
+def _format_create_view(op: CreateView, indent: str) -> str:
+    return (
+        f"{indent}CreateView(name={_q(op.name)}, "
+        f"definition={_q(op.definition)}, schema={_q(op.schema)}, "
+        f"columns={_format_view_columns(tuple(op.columns))}, "
+        f"replace={_q(op.replace)}),"
+    )
+
+
+def _format_drop_view(op: DropView, indent: str) -> str:
+    return (
+        f"{indent}DropView(name={_q(op.name)}, schema={_q(op.schema)}, "
+        f"cascade={_q(op.cascade)}),"
+    )
+
+
 def _format_drop_index(op: DropIndex, indent: str) -> str:
     return (
         f"{indent}DropIndex(name={_q(op.name)}, concurrent={_q(op.concurrent)}, "
@@ -241,6 +278,10 @@ def _format_op(op: object, indent: str) -> str:
         return _format_create_index(op, indent)
     if isinstance(op, DropIndex):
         return _format_drop_index(op, indent)
+    if isinstance(op, CreateView):
+        return _format_create_view(op, indent)
+    if isinstance(op, DropView):
+        return _format_drop_view(op, indent)
     raise TypeError(f"codegen does not support op type {type(op).__name__}")
 
 
@@ -254,9 +295,19 @@ def _render(
         _is_non_transactional(op) for op in reverse
     )
 
+    extra_modules: set[str] = set()
+    for op in list(forward) + list(reverse):
+        if isinstance(op, CreateView):
+            for _, t in op.columns:
+                mod = getattr(t, "__module__", "builtins")
+                if mod != "builtins":
+                    extra_modules.add(mod)
+
     lines: list[str] = []
     lines.append("from norm.migrations import Migration")
     lines.append(f"from norm.migrations.operations import {_IMPORT_NAMES}")
+    for mod in sorted(extra_modules):
+        lines.append(f"import {mod}")
     lines.append("")
     if non_atomic:
         lines.append(

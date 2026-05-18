@@ -532,10 +532,46 @@ class NormMeta(type):
         namespace: dict[str, Any],
         **kwargs: Any,
     ) -> "NormMeta":
+        view_query = kwargs.pop("query", None)
         cls = super().__new__(mcs, name, bases, namespace, **kwargs)
         if "__table__" not in namespace and any(isinstance(b, NormMeta) for b in bases):
             _setup_table(cls)
+            if view_query is not None:
+                _validate_view_columns(cls, view_query)
+                cls.__view_query__ = view_query
         return cls
+
+
+def _validate_view_columns(cls: type, query: Any) -> None:
+    """Cross-validate that View body annotations match the query's columns."""
+    query_cols = getattr(query, "__columns__", ()) or ()
+    body_fields = [
+        (f.column_name, f.python_type) for f in getattr(cls, "__fields__", ())
+    ]
+    for idx, body in enumerate(body_fields):
+        if idx >= len(query_cols):
+            raise TypeError(
+                f"View {cls.__name__!r}: column {body[0]!r} is not present in the query"
+            )
+        qcol = query_cols[idx]
+        qname = getattr(qcol.pika_field, "alias", None) or qcol.column_name
+        qtype = qcol.python_type
+        if body[0] != qname:
+            raise TypeError(
+                f"View {cls.__name__!r}: column {body[0]!r} at position {idx} "
+                f"does not match query column {qname!r}"
+            )
+        if body[1] is not qtype:
+            raise TypeError(
+                f"View {cls.__name__!r}: column {body[0]!r} has type "
+                f"{body[1].__name__!r} but query column has type {qtype.__name__!r}"
+            )
+    if len(body_fields) != len(query_cols):
+        extra = query_cols[len(body_fields)]
+        ename = getattr(extra.pika_field, "alias", None) or extra.column_name
+        raise TypeError(
+            f"View {cls.__name__!r}: query column {ename!r} is not declared on the View body"
+        )
 
 
 class Entity(metaclass=NormMeta):

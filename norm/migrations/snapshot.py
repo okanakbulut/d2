@@ -13,7 +13,7 @@ from uuid import UUID
 
 from .naming import auto_fk_name, auto_index_name, auto_unique_name
 from .operations import ColumnDef, CreateTable
-from .state import SchemaState
+from .state import SchemaState, ViewState
 
 
 # Python type → SQL type. `int` maps to BIGINT by default; the BIGSERIAL upgrade
@@ -110,17 +110,71 @@ def _fk_constraint_dict(
     }
 
 
+def _inline_view_params(sql: str, params: tuple[Any, ...]) -> str:
+    """Inline `$N` placeholders for use inside a VIEW definition (which cannot
+    bind runtime parameters). Supports None, bool, int/float, and str. Other
+    types raise — by design: a view definition that needs richer literals
+    should be authored with explicit SQL fragments.
+    """
+    result = sql
+    for i in range(len(params), 0, -1):  # replace longest indices first
+        placeholder = f"${i}"
+        result = result.replace(placeholder, _sql_literal(params[i - 1]))
+    return result
+
+
+def _sql_literal(value: Any) -> str:
+    if value is None:
+        return "NULL"
+    if isinstance(value, bool):
+        return "TRUE" if value else "FALSE"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str):
+        escaped = value.replace("'", "''")
+        return f"'{escaped}'"
+    raise TypeError(
+        f"cannot inline value of type {type(value).__name__!r} into a view definition"
+    )
+
+
+def _snapshot_view(cls: Any, state: SchemaState) -> None:
+    query = getattr(cls, "__view_query__", None)
+    if query is None:
+        return
+    view_name = cls.__table__.get_table_name()
+    schema_obj = getattr(cls.__table__, "_schema", None)
+    schema_str = schema_obj.get_sql(quote_char='"').strip('"') if schema_obj else None
+    raw_sql, params = query.build()
+    definition = _inline_view_params(raw_sql, params)
+    columns: tuple[tuple[str, type], ...] = tuple(
+        (
+            getattr(c.pika_field, "alias", None) or c.column_name,
+            c.python_type,
+        )
+        for c in query.__columns__
+    )
+    state.views[view_name] = ViewState(
+        definition=definition,
+        columns=columns,
+        schema=schema_str,
+    )
+
+
 def models_to_schema_state(models: list[type]) -> SchemaState:
     """Project the given model classes into a `SchemaState`.
 
-    Only `Table` subclasses contribute table state. `View` subclasses are
-    skipped here (handled by a later slice). Schema-level state (extensions,
+    `Table` subclasses contribute table state; `View` subclasses contribute
+    view state via their `__view_query__`. Schema-level state (extensions,
     schemas) is empty.
     """
-    from norm.schema import Table  # local import to avoid cycles
+    from norm.schema import Table, View  # local import to avoid cycles
 
     state = SchemaState()
     for cls in models:
+        if isinstance(cls, type) and issubclass(cls, View) and not issubclass(cls, Table):
+            _snapshot_view(cls, state)
+            continue
         if not (isinstance(cls, type) and issubclass(cls, Table)):
             continue
         columns: dict[str, ColumnDef] = {}

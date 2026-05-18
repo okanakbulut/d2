@@ -31,8 +31,15 @@ class TableState:
 
 
 @dataclass
+class ViewState:
+    definition: str
+    columns: tuple[tuple[str, type], ...]
+    schema: str | None = None
+
+
+@dataclass
 class SchemaState:
     tables: dict[str, TableState] = field(default_factory=dict)
-    views: dict = field(default_factory=dict)
+    views: dict[str, ViewState] = field(default_factory=dict)
     extensions: set[str] = field(default_factory=set)
     schemas: set[str] = field(default_factory=set)

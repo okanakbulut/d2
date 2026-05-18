@@ -1,6 +1,6 @@
 """Tests for .json() query modifier."""
 
-from tests.unit.conftest import Users, Posts
+from tests.unit.conftest import Users
 
 
 def test_json_single_row():
@@ -65,6 +65,37 @@ def test_json_select_all():
         'SELECT row_to_json(t) FROM '
         '(SELECT "users"."id","users"."name","users"."email","users"."age","users"."created_at"'
         ' FROM "public"."users") t'
+    )
+    assert params == ()
+
+
+def test_json_raw_single_row():
+    sql, params = Users.select(Users.id, Users.name).json(raw=True).build()
+    assert sql == (
+        'SELECT row_to_json(t)::text FROM (SELECT "users"."id","users"."name" FROM "public"."users") t'
+    )
+    assert params == ()
+
+
+def test_json_raw_with_where():
+    sql, params = (
+        Users.select(Users.id, Users.name)
+        .where(Users.id == 1)
+        .json(raw=True)
+        .build()
+    )
+    assert sql == (
+        'SELECT row_to_json(t)::text FROM '
+        '(SELECT "users"."id","users"."name" FROM "public"."users" WHERE "users"."id"=$1) t'
+    )
+    assert params == (1,)
+
+
+def test_json_raw_aliased():
+    sql, params = Users.select(Users.id, Users.name).aliased("users").json(raw=True).build()
+    assert sql == (
+        "SELECT json_build_object('users',COALESCE(json_agg(t),'[]'::json))::text "
+        'FROM (SELECT "users"."id","users"."name" FROM "public"."users") t'
     )
     assert params == ()
 

@@ -175,7 +175,7 @@ class TestAddConstraintForeignKeyDDL:
 
 
 EXPECTED_CODEGEN_FK = '''from norm.migrations import Migration
-from norm.migrations.operations import AddColumn, AddConstraint, AlterColumnType, ColumnDef, CreateIndex, CreateTable, CreateView, DropColumn, DropColumnDefault, DropColumnNotNull, DropConstraint, DropIndex, DropTable, DropView, RenameColumn, SetColumnDefault, SetColumnNotNull
+from norm.migrations.operations import AddColumn, AddConstraint, AlterColumnType, ColumnDef, CreateExtension, CreateIndex, CreateSchema, CreateTable, CreateView, DropColumn, DropColumnDefault, DropColumnNotNull, DropConstraint, DropExtension, DropIndex, DropSchema, DropTable, DropView, RenameColumn, SetColumnDefault, SetColumnNotNull
 
 
 class Migration(Migration):

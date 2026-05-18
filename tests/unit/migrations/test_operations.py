@@ -6,10 +6,14 @@ from norm.migrations.operations import (
     AddColumn,
     AlterColumnType,
     ColumnDef,
+    CreateExtension,
+    CreateSchema,
     CreateTable,
     DropColumn,
     DropColumnDefault,
     DropColumnNotNull,
+    DropExtension,
+    DropSchema,
     RenameColumn,
     SetColumnDefault,
     SetColumnNotNull,
@@ -274,3 +278,61 @@ class TestDropColumnDefault:
         state = _make_state_with_table({"x": ColumnState(type="TEXT", nullable=True, default="'hi'")})
         DropColumnDefault(table="t", column="x", schema="public").apply(state)
         assert state.tables["t"].columns["x"].default is None
+
+
+class TestCreateExtension:
+    def test_to_ddl(self):
+        assert (
+            CreateExtension(name="pgcrypto").to_ddl()
+            == 'CREATE EXTENSION IF NOT EXISTS "pgcrypto"'
+        )
+
+    def test_apply_adds_to_state(self):
+        state = SchemaState()
+        CreateExtension(name="pgcrypto").apply(state)
+        assert state.extensions == {"pgcrypto"}
+
+
+class TestDropExtension:
+    def test_to_ddl(self):
+        assert (
+            DropExtension(name="pgcrypto").to_ddl()
+            == 'DROP EXTENSION IF EXISTS "pgcrypto"'
+        )
+
+    def test_apply_removes_from_state(self):
+        state = SchemaState(extensions={"pgcrypto", "uuid-ossp"})
+        DropExtension(name="pgcrypto").apply(state)
+        assert state.extensions == {"uuid-ossp"}
+
+
+class TestCreateSchema:
+    def test_to_ddl(self):
+        assert (
+            CreateSchema(name="audit").to_ddl()
+            == 'CREATE SCHEMA IF NOT EXISTS "audit"'
+        )
+
+    def test_apply_adds_to_state(self):
+        state = SchemaState()
+        CreateSchema(name="audit").apply(state)
+        assert state.schemas == {"audit"}
+
+
+class TestDropSchema:
+    def test_to_ddl_default(self):
+        assert (
+            DropSchema(name="audit").to_ddl()
+            == 'DROP SCHEMA IF EXISTS "audit"'
+        )
+
+    def test_to_ddl_cascade(self):
+        assert (
+            DropSchema(name="audit", cascade=True).to_ddl()
+            == 'DROP SCHEMA IF EXISTS "audit" CASCADE'
+        )
+
+    def test_apply_removes_from_state(self):
+        state = SchemaState(schemas={"audit", "reporting"})
+        DropSchema(name="audit").apply(state)
+        assert state.schemas == {"reporting"}

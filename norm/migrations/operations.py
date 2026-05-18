@@ -409,6 +409,54 @@ class DropIndex:
 
 
 @dataclass
+class CreateExtension:
+    name: str
+
+    def to_ddl(self) -> str:
+        return f'CREATE EXTENSION IF NOT EXISTS "{self.name}"'
+
+    def apply(self, state: SchemaState) -> None:
+        state.extensions.add(self.name)
+
+
+@dataclass
+class DropExtension:
+    name: str
+
+    def to_ddl(self) -> str:
+        return f'DROP EXTENSION IF EXISTS "{self.name}"'
+
+    def apply(self, state: SchemaState) -> None:
+        state.extensions.discard(self.name)
+
+
+@dataclass
+class CreateSchema:
+    name: str
+
+    def to_ddl(self) -> str:
+        return f'CREATE SCHEMA IF NOT EXISTS "{self.name}"'
+
+    def apply(self, state: SchemaState) -> None:
+        state.schemas.add(self.name)
+
+
+@dataclass
+class DropSchema:
+    name: str
+    cascade: bool = False
+
+    def to_ddl(self) -> str:
+        sql = f'DROP SCHEMA IF EXISTS "{self.name}"'
+        if self.cascade:
+            sql += " CASCADE"
+        return sql
+
+    def apply(self, state: SchemaState) -> None:
+        state.schemas.discard(self.name)
+
+
+@dataclass
 class CreateView:
     name: str
     definition: str

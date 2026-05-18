@@ -3,12 +3,17 @@
 from norm.migrations.draft import diff_states
 from norm.migrations.operations import (
     AddColumn,
+    AddConstraint,
     AlterColumnType,
     ColumnDef,
+    CreateExtension,
+    CreateSchema,
     CreateTable,
     DropColumn,
     DropColumnDefault,
     DropColumnNotNull,
+    DropExtension,
+    DropSchema,
     DropTable,
     SetColumnDefault,
     SetColumnNotNull,
@@ -219,4 +224,135 @@ class TestDiffColumns:
         assert reverse == [
             DropColumn(table="t", column="new_name", schema="public"),
             AddColumn(table="t", column="old_name", type="TEXT", nullable=False, schema="public"),
+        ]
+
+
+class TestDiffExtensions:
+    def test_added_extension_yields_create_and_reverse_drop(self):
+        current = SchemaState()
+        target = SchemaState(extensions={"pgcrypto"})
+
+        forward, reverse = diff_states(current, target)
+        assert forward == [CreateExtension(name="pgcrypto")]
+        assert reverse == [DropExtension(name="pgcrypto")]
+
+    def test_removed_extension_yields_drop_and_reverse_create(self):
+        current = SchemaState(extensions={"pgcrypto"})
+        target = SchemaState()
+
+        forward, reverse = diff_states(current, target)
+        assert forward == [DropExtension(name="pgcrypto")]
+        assert reverse == [CreateExtension(name="pgcrypto")]
+
+    def test_multiple_added_extensions_are_sorted(self):
+        current = SchemaState()
+        target = SchemaState(extensions={"uuid-ossp", "pgcrypto"})
+
+        forward, reverse = diff_states(current, target)
+        assert forward == [
+            CreateExtension(name="pgcrypto"),
+            CreateExtension(name="uuid-ossp"),
+        ]
+        assert reverse == [
+            DropExtension(name="pgcrypto"),
+            DropExtension(name="uuid-ossp"),
+        ]
+
+
+class TestDiffSchemas:
+    def test_added_schema_yields_create_and_reverse_drop(self):
+        current = SchemaState()
+        target = SchemaState(schemas={"audit"})
+
+        forward, reverse = diff_states(current, target)
+        assert forward == [CreateSchema(name="audit")]
+        assert reverse == [DropSchema(name="audit", cascade=False)]
+
+    def test_removed_schema_yields_drop_and_reverse_create(self):
+        current = SchemaState(schemas={"audit"})
+        target = SchemaState()
+
+        forward, reverse = diff_states(current, target)
+        assert forward == [DropSchema(name="audit", cascade=False)]
+        assert reverse == [CreateSchema(name="audit")]
+
+    def test_multiple_added_schemas_are_sorted(self):
+        current = SchemaState()
+        target = SchemaState(schemas={"reporting", "audit"})
+
+        forward, reverse = diff_states(current, target)
+        assert forward == [
+            CreateSchema(name="audit"),
+            CreateSchema(name="reporting"),
+        ]
+        assert reverse == [
+            DropSchema(name="audit", cascade=False),
+            DropSchema(name="reporting", cascade=False),
+        ]
+
+
+class TestDiffForwardOrdering:
+    def test_extensions_before_schemas_before_tables_before_fks(self):
+        current = SchemaState()
+        target = SchemaState(extensions={"pgcrypto"}, schemas={"audit"})
+        parent = TableState(
+            columns={"id": ColumnState(type="BIGINT", nullable=False, primary_key=True)},
+            schema="audit",
+        )
+        child = TableState(
+            columns={
+                "id": ColumnState(type="BIGINT", nullable=False, primary_key=True),
+                "parent_id": ColumnState(type="BIGINT", nullable=False),
+            },
+            schema="audit",
+            constraints=[
+                {
+                    "type": "foreign_key",
+                    "name": "child_parent_id_fk",
+                    "columns": ("parent_id",),
+                    "references_schema": "audit",
+                    "references_table": "parent",
+                    "references_column": "id",
+                    "on_delete": None,
+                    "on_update": None,
+                }
+            ],
+        )
+        target.tables["parent"] = parent
+        target.tables["child"] = child
+
+        forward, _ = diff_states(current, target)
+
+        assert forward == [
+            CreateExtension(name="pgcrypto"),
+            CreateSchema(name="audit"),
+            CreateTable(
+                table="child",
+                columns={
+                    "id": ColumnDef(type="BIGINT", nullable=False, primary_key=True),
+                    "parent_id": ColumnDef(type="BIGINT", nullable=False),
+                },
+                schema="audit",
+            ),
+            CreateTable(
+                table="parent",
+                columns={
+                    "id": ColumnDef(type="BIGINT", nullable=False, primary_key=True),
+                },
+                schema="audit",
+            ),
+            AddConstraint(
+                table="child",
+                constraint={
+                    "type": "foreign_key",
+                    "name": "child_parent_id_fk",
+                    "columns": ("parent_id",),
+                    "references_schema": "audit",
+                    "references_table": "parent",
+                    "references_column": "id",
+                    "on_delete": None,
+                    "on_update": None,
+                },
+                schema="audit",
+            ),
         ]

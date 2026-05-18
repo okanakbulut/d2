@@ -19,7 +19,7 @@ from norm.migrations.operations import (
 
 
 EXPECTED_CREATE_SINGLE = '''from norm.migrations import Migration
-from norm.migrations.operations import AddColumn, AddConstraint, AlterColumnType, ColumnDef, CreateIndex, CreateTable, CreateView, DropColumn, DropColumnDefault, DropColumnNotNull, DropConstraint, DropIndex, DropTable, DropView, RenameColumn, SetColumnDefault, SetColumnNotNull
+from norm.migrations.operations import AddColumn, AddConstraint, AlterColumnType, ColumnDef, CreateExtension, CreateIndex, CreateSchema, CreateTable, CreateView, DropColumn, DropColumnDefault, DropColumnNotNull, DropConstraint, DropExtension, DropIndex, DropSchema, DropTable, DropView, RenameColumn, SetColumnDefault, SetColumnNotNull
 
 
 class Migration(Migration):
@@ -42,7 +42,7 @@ class Migration(Migration):
 
 
 EXPECTED_AUTO_MULTI = '''from norm.migrations import Migration
-from norm.migrations.operations import AddColumn, AddConstraint, AlterColumnType, ColumnDef, CreateIndex, CreateTable, CreateView, DropColumn, DropColumnDefault, DropColumnNotNull, DropConstraint, DropIndex, DropTable, DropView, RenameColumn, SetColumnDefault, SetColumnNotNull
+from norm.migrations.operations import AddColumn, AddConstraint, AlterColumnType, ColumnDef, CreateExtension, CreateIndex, CreateSchema, CreateTable, CreateView, DropColumn, DropColumnDefault, DropColumnNotNull, DropConstraint, DropExtension, DropIndex, DropSchema, DropTable, DropView, RenameColumn, SetColumnDefault, SetColumnNotNull
 
 
 class Migration(Migration):
@@ -168,7 +168,7 @@ class TestMakeMigration:
 
 
 EXPECTED_COLUMN_OPS = '''from norm.migrations import Migration
-from norm.migrations.operations import AddColumn, AddConstraint, AlterColumnType, ColumnDef, CreateIndex, CreateTable, CreateView, DropColumn, DropColumnDefault, DropColumnNotNull, DropConstraint, DropIndex, DropTable, DropView, RenameColumn, SetColumnDefault, SetColumnNotNull
+from norm.migrations.operations import AddColumn, AddConstraint, AlterColumnType, ColumnDef, CreateExtension, CreateIndex, CreateSchema, CreateTable, CreateView, DropColumn, DropColumnDefault, DropColumnNotNull, DropConstraint, DropExtension, DropIndex, DropSchema, DropTable, DropView, RenameColumn, SetColumnDefault, SetColumnNotNull
 
 
 class Migration(Migration):
@@ -229,3 +229,67 @@ class TestMakeMigrationColumnOps:
         )
         assert path.name == "0005_auto.py"
         assert path.read_text() == EXPECTED_COLUMN_OPS
+
+
+from norm.migrations.operations import (
+    CreateExtension,
+    CreateSchema,
+    DropExtension,
+    DropSchema,
+)
+
+
+EXPECTED_EXT_SCHEMA = '''from norm.migrations import Migration
+from norm.migrations.operations import AddColumn, AddConstraint, AlterColumnType, ColumnDef, CreateExtension, CreateIndex, CreateSchema, CreateTable, CreateView, DropColumn, DropColumnDefault, DropColumnNotNull, DropConstraint, DropExtension, DropIndex, DropSchema, DropTable, DropView, RenameColumn, SetColumnDefault, SetColumnNotNull
+
+
+class Migration(Migration):
+    name = "0006_auto"
+    dependencies = []
+    operations = [
+        CreateExtension(name="pgcrypto"),
+        CreateSchema(name="audit"),
+        CreateTable(
+            table="event",
+            schema="audit",
+            columns={
+                "id": ColumnDef(type="BIGINT", nullable=False, default=None, primary_key=True),
+            },
+        ),
+    ]
+    reverse_operations = [
+        DropTable(table="event", schema="audit"),
+        DropSchema(name="audit", cascade=False),
+        DropExtension(name="pgcrypto"),
+    ]
+'''
+
+
+class TestMakeMigrationExtensionsAndSchemas:
+    def test_renders_extension_and_schema_ops(self, tmp_path: Path):
+        forward = [
+            CreateExtension(name="pgcrypto"),
+            CreateSchema(name="audit"),
+            CreateTable(
+                table="event",
+                schema="audit",
+                columns={
+                    "id": ColumnDef(type="BIGINT", nullable=False, primary_key=True),
+                },
+            ),
+        ]
+        reverse = [
+            DropTable(table="event", schema="audit"),
+            DropSchema(name="audit", cascade=False),
+            DropExtension(name="pgcrypto"),
+        ]
+        path = make_migration(
+            migrations_dir=tmp_path,
+            number=6,
+            forward=forward,
+            reverse=reverse,
+            dependencies=[],
+            label=None,
+        )
+        assert path.name == "0006_auto.py"
+        assert path.read_text() == EXPECTED_EXT_SCHEMA

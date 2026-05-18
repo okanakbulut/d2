@@ -14,14 +14,18 @@ from .operations import (
     AddConstraint,
     AlterColumnType,
     ColumnDef,
+    CreateExtension,
     CreateIndex,
+    CreateSchema,
     CreateTable,
     CreateView,
     DropColumn,
     DropColumnDefault,
     DropColumnNotNull,
     DropConstraint,
+    DropExtension,
     DropIndex,
+    DropSchema,
     DropTable,
     DropView,
     SetColumnDefault,
@@ -166,6 +170,22 @@ def diff_states(
     """
     forward: list = []
     reverse: list = []
+
+    # Extensions first: indexes (GIN, etc.) and column types may depend on them.
+    for name in sorted(target.extensions - current.extensions):
+        forward.append(CreateExtension(name=name))
+        reverse.append(DropExtension(name=name))
+    for name in sorted(current.extensions - target.extensions):
+        forward.append(DropExtension(name=name))
+        reverse.append(CreateExtension(name=name))
+
+    # Schemas next: tables qualify into them.
+    for name in sorted(target.schemas - current.schemas):
+        forward.append(CreateSchema(name=name))
+        reverse.append(DropSchema(name=name, cascade=False))
+    for name in sorted(current.schemas - target.schemas):
+        forward.append(DropSchema(name=name, cascade=False))
+        reverse.append(CreateSchema(name=name))
 
     current_tables = set(current.tables)
     target_tables = set(target.tables)

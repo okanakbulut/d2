@@ -5,7 +5,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from norm.migrations.snapshot import models_to_schema_state
-from norm.model import field
+from norm.model import TableMeta, field
 from norm.schema import Field, PrimaryKey, Table, View
 
 
@@ -86,3 +86,46 @@ class TestModelsToSchemaState:
 
         state = models_to_schema_state([SnapVisibleThing])
         assert state.tables == {}
+
+
+class TestSnapshotExtensionsAndSchemas:
+    def test_extensions_unioned_across_models(self):
+        class SnapA(Table):
+            __meta__ = TableMeta(extensions=("pgcrypto",))
+            x: Field[str]
+
+        class SnapB(Table):
+            __meta__ = TableMeta(extensions=("uuid-ossp", "pgcrypto"))
+            y: Field[str]
+
+        state = models_to_schema_state([SnapA, SnapB])
+        assert state.extensions == {"pgcrypto", "uuid-ossp"}
+
+    def test_schemas_collected_from_meta_excluding_public_and_none(self):
+        class SnapAuditEvent(Table):
+            __meta__ = TableMeta(schema="audit")
+            x: Field[str]
+
+        class SnapReport(Table):
+            __meta__ = TableMeta(schema="reporting")
+            y: Field[str]
+
+        class SnapPublic(Table):
+            __meta__ = TableMeta(schema="public")
+            z: Field[str]
+
+        class SnapNoSchema(Table):
+            w: Field[str]
+
+        state = models_to_schema_state(
+            [SnapAuditEvent, SnapReport, SnapPublic, SnapNoSchema]
+        )
+        assert state.schemas == {"audit", "reporting"}
+
+    def test_no_extensions_or_schemas_when_unset(self):
+        class SnapPlain(Table):
+            x: Field[str]
+
+        state = models_to_schema_state([SnapPlain])
+        assert state.extensions == set()
+        assert state.schemas == set()

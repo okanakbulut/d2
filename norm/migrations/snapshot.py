@@ -217,6 +217,11 @@ def models_to_schema_state(models: list[type]) -> SchemaState:
 
         meta = getattr(cls, "__meta__", None)
         if meta is not None:
+            for ext in getattr(meta, "extensions", ()) or ():
+                state.extensions.add(ext)
+            meta_schema = getattr(meta, "schema", None)
+            if meta_schema is not None and meta_schema != "public":
+                state.schemas.add(meta_schema)
             for fk in getattr(meta, "foreign_keys", ()) or ():
                 table_state.constraints.append(
                     _fk_constraint_dict(table=table_name, fk=fk)

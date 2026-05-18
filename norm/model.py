@@ -57,3 +57,4 @@ class TableMeta:
     schema: str | None = None
     indexes: tuple[IndexDef, ...] = ()
     foreign_keys: tuple[ForeignKey, ...] = ()
+    extensions: tuple[str, ...] = ()

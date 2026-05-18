@@ -9,14 +9,18 @@ from .operations import (
     AddConstraint,
     AlterColumnType,
     ColumnDef,
+    CreateExtension,
     CreateIndex,
+    CreateSchema,
     CreateTable,
     CreateView,
     DropColumn,
     DropColumnDefault,
     DropColumnNotNull,
     DropConstraint,
+    DropExtension,
     DropIndex,
+    DropSchema,
     DropTable,
     DropView,
     RenameColumn,
@@ -32,14 +36,18 @@ _SUPPORTED_OPS: tuple[type, ...] = (
     AddConstraint,
     AlterColumnType,
     ColumnDef,
+    CreateExtension,
     CreateIndex,
+    CreateSchema,
     CreateTable,
     CreateView,
     DropColumn,
     DropColumnDefault,
     DropColumnNotNull,
     DropConstraint,
+    DropExtension,
     DropIndex,
+    DropSchema,
     DropTable,
     DropView,
     RenameColumn,
@@ -249,6 +257,22 @@ def _format_drop_index(op: DropIndex, indent: str) -> str:
     )
 
 
+def _format_create_extension(op: CreateExtension, indent: str) -> str:
+    return f"{indent}CreateExtension(name={_q(op.name)}),"
+
+
+def _format_drop_extension(op: DropExtension, indent: str) -> str:
+    return f"{indent}DropExtension(name={_q(op.name)}),"
+
+
+def _format_create_schema(op: CreateSchema, indent: str) -> str:
+    return f"{indent}CreateSchema(name={_q(op.name)}),"
+
+
+def _format_drop_schema(op: DropSchema, indent: str) -> str:
+    return f"{indent}DropSchema(name={_q(op.name)}, cascade={_q(op.cascade)}),"
+
+
 def _format_op(op: object, indent: str) -> str:
     if isinstance(op, CreateTable):
         return _format_create_table(op, indent)
@@ -282,6 +306,14 @@ def _format_op(op: object, indent: str) -> str:
         return _format_create_view(op, indent)
     if isinstance(op, DropView):
         return _format_drop_view(op, indent)
+    if isinstance(op, CreateExtension):
+        return _format_create_extension(op, indent)
+    if isinstance(op, DropExtension):
+        return _format_drop_extension(op, indent)
+    if isinstance(op, CreateSchema):
+        return _format_create_schema(op, indent)
+    if isinstance(op, DropSchema):
+        return _format_drop_schema(op, indent)
     raise TypeError(f"codegen does not support op type {type(op).__name__}")
 
 

@@ -25,6 +25,20 @@ class Posts(Table):
     title:   Field[str]
 
 
+class Comments(Table):
+    __meta__ = TableMeta(schema="public")
+    id:      PrimaryKey[int] = field(db_default=True)
+    post_id: Field[int]
+    body:    Field[str]
+
+
+class Profiles(Table):
+    __meta__ = TableMeta(schema="public")
+    id:      PrimaryKey[int] = field(db_default=True)
+    user_id: Field[int]
+    bio:     Field[str]
+
+
 class Orders(Table):
     __meta__ = TableMeta(schema="public")
     id:      PrimaryKey[int] = field(db_default=True)

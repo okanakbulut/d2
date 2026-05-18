@@ -33,6 +33,7 @@ _QUERY_STATE_KEYS: tuple[str, ...] = (
     "__set_op__",
     "__ctes__",
     "__recursive__",
+    "__prefetches__",
 )
 
 _DEFAULTS: dict[str, Any] = {
@@ -52,6 +53,7 @@ _DEFAULTS: dict[str, Any] = {
     "__set_op__": "",
     "__ctes__": (),
     "__recursive__": False,
+    "__prefetches__": (),
 }
 
 
@@ -359,6 +361,17 @@ class WindowSpec:
         return _AggField(type(None), term.as_(alias))
 
 
+class _RawTerm(pypika.terms.Term):
+    """A pypika Term that emits a pre-built SQL string verbatim."""
+
+    def __init__(self, sql: str) -> None:
+        super().__init__(alias=None)
+        self._sql = sql
+
+    def get_sql(self, **kwargs: Any) -> str:
+        return self._sql
+
+
 class _ExcludedTerm(pypika.terms.Term):
     """Renders as EXCLUDED."column" — EXCLUDED is a keyword, not a quoted table name."""
 
@@ -520,6 +533,7 @@ class Entity(metaclass=NormMeta):
     __set_op__: ClassVar[str] = ""
     __ctes__: ClassVar[tuple[Any, ...]] = ()
     __recursive__: ClassVar[bool] = False
+    __prefetches__: ClassVar[tuple[Any, ...]] = ()
 
     @classmethod
     def clone(cls) -> type[Self]:
@@ -710,6 +724,12 @@ class Selectable(Entity):
         return cls._make_set_op(other, "EXCEPT")
 
     @classmethod
+    def prefetch(cls, *children: "type[Any]") -> "type[Self]":
+        q = cls.clone()
+        q.__prefetches__ = cls.__prefetches__ + children
+        return q
+
+    @classmethod
     def as_scalar(cls) -> "Any":
         from .query import ScalarSubquery
         return ScalarSubquery(inner=cls)
@@ -717,6 +737,16 @@ class Selectable(Entity):
     @classmethod
     def as_pypika(cls, params: list[Any], dialect: Dialect, cte_names: frozenset[str] = frozenset()) -> Any:
         pika_cols = [col.to_column(params, dialect) for col in cls.__columns__]
+        for child in cls.__prefetches__:
+            alias: str = child.__alias__
+            inner: Any = child.__inner__
+            inner_pika = inner.as_pypika(params, dialect, cte_names)
+            inner_sql = inner_pika.get_sql(quote_char='"')
+            if inner.__row_limit__ == 1:
+                prefetch_sql = f"(SELECT row_to_json(t) FROM ({inner_sql}) t) AS \"{alias}\""
+            else:
+                prefetch_sql = f"(SELECT COALESCE(json_agg(t),'[]'::json) FROM ({inner_sql}) t) AS \"{alias}\""
+            pika_cols.append(_RawTerm(prefetch_sql))
         q = pypika.Query.from_(cls.__table__).select(*pika_cols)
         if cls.__is_distinct__:
             q = q.distinct()

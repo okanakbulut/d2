@@ -166,6 +166,31 @@ async def cmd_apply(*, cwd: Path, dsn: str, migrations_dir: str | None = None, m
     return 0
 
 
+async def cmd_rollback(
+    *,
+    cwd: Path,
+    dsn: str,
+    name: str,
+    force: bool = False,
+    migrations_dir: str | None = None,
+    models: str | None = None,
+) -> int:
+    import asyncpg  # local import to keep CLI startup light
+
+    from norm.connection import AsyncConnection
+    from .runner import MigrationRunner
+
+    cfg = load_config(cwd, migrations_dir_override=migrations_dir, models_override=models)
+    raw = await asyncpg.connect(dsn)
+    try:
+        runner = MigrationRunner(conn=AsyncConnection(raw), migrations_dir=str(cfg.migrations_dir))
+        await runner.rollback(name, force=force)
+    finally:
+        await raw.close()
+    print(f"Rolled back {name}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="norm.migrations")
     parser.add_argument("--migrations-dir", default=None)
@@ -175,6 +200,10 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("check")
     apply_p = sub.add_parser("apply")
     apply_p.add_argument("--dsn", required=True)
+    rollback_p = sub.add_parser("rollback")
+    rollback_p.add_argument("name")
+    rollback_p.add_argument("--dsn", required=True)
+    rollback_p.add_argument("--force", action="store_true")
 
     args = parser.parse_args(argv)
     cwd = Path.cwd()
@@ -187,6 +216,17 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "apply":
         return asyncio.run(
             cmd_apply(cwd=cwd, dsn=args.dsn, migrations_dir=args.migrations_dir, models=args.models)
+        )
+    if args.cmd == "rollback":
+        return asyncio.run(
+            cmd_rollback(
+                cwd=cwd,
+                dsn=args.dsn,
+                name=args.name,
+                force=args.force,
+                migrations_dir=args.migrations_dir,
+                models=args.models,
+            )
         )
     return 2
 

@@ -91,6 +91,50 @@ class MigrationRunner:
             name,
         )
 
+    async def rollback(self, name: str, *, force: bool = False) -> None:
+        await self._ensure_tracking_table()
+        applied = await self.applied()
+        if not force:
+            if not applied or applied[-1] != name:
+                raise RuntimeError(
+                    f"refusing to rollback {name!r}: not the most recently "
+                    "applied migration (use force=True to override)"
+                )
+        # Locate the migration class.
+        mig_cls: type[Migration] | None = None
+        for discovered_name, cls in self._discover():
+            if discovered_name == name:
+                mig_cls = cls
+                break
+        if mig_cls is None:
+            raise RuntimeError(f"migration {name!r} not found on disk")
+        if mig_cls.reverse_operations is None:
+            raise RuntimeError(
+                f"migration {name!r} has reverse_operations = None; "
+                "edit the migration file to provide an explicit reverse list"
+            )
+        raw = self._conn._conn
+        if mig_cls.atomic:
+            async with raw.transaction():
+                await self._run_reverse_and_unrecord(name, mig_cls)
+        else:
+            await self._run_reverse_and_unrecord(name, mig_cls)
+
+    async def _run_reverse_and_unrecord(
+        self, name: str, mig_cls: type[Migration]
+    ) -> None:
+        raw = self._conn._conn
+        for op in mig_cls.reverse_operations or []:
+            try:
+                await raw.execute(op.to_ddl())
+            except Exception:
+                self._print_recovery_for(op)
+                raise
+        await raw.execute(
+            f"DELETE FROM {self._migrations_table} WHERE name = $1",
+            name,
+        )
+
     def _print_recovery_for(self, op: object) -> None:
         if isinstance(op, CreateIndex) and op.concurrent:
             qual = (

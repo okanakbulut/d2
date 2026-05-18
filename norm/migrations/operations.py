@@ -287,6 +287,23 @@ def _constraint_sql(constraint: dict) -> str:
     if ctype == "unique":
         cols = _quote_cols(tuple(constraint["columns"]))
         return f'CONSTRAINT "{name}" UNIQUE ({cols})'
+    if ctype == "foreign_key":
+        cols = _quote_cols(tuple(constraint["columns"]))
+        ref_schema = constraint.get("references_schema")
+        ref_table = constraint["references_table"]
+        ref_col = constraint["references_column"]
+        ref_qualified = _qualify(ref_schema, ref_table)
+        parts = [
+            f'CONSTRAINT "{name}" FOREIGN KEY ({cols}) '
+            f'REFERENCES {ref_qualified} ("{ref_col}")',
+        ]
+        on_delete = constraint.get("on_delete")
+        on_update = constraint.get("on_update")
+        if on_delete:
+            parts.append(f"ON DELETE {on_delete}")
+        if on_update:
+            parts.append(f"ON UPDATE {on_update}")
+        return " ".join(parts)
     raise ValueError(f"unsupported constraint type: {ctype!r}")
 
 

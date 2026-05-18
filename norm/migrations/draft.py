@@ -168,17 +168,27 @@ def diff_states(
     current_tables = set(current.tables)
     target_tables = set(target.tables)
 
+    # FK AddConstraint ops are deferred until after all CreateTable ops in the
+    # forward list, so target tables exist when each FK is added.
+    deferred_fk_adds: list = []
+
     for name in sorted(target_tables - current_tables):
         table = target.tables[name]
         forward.append(_create_table_from_state(name, table))
         reverse.append(DropTable(table=name, schema=table.schema))
         for c in table.constraints:
-            forward.append(
-                AddConstraint(table=name, constraint=dict(c), schema=table.schema)
+            add = AddConstraint(
+                table=name, constraint=dict(c), schema=table.schema,
             )
+            if c.get("type") == "foreign_key":
+                deferred_fk_adds.append(add)
+            else:
+                forward.append(add)
         for idx in table.indexes:
             forward.append(_create_index_from_state(name, table.schema, idx))
         # DropTable in reverse removes everything; no separate cleanup needed.
+
+    forward.extend(deferred_fk_adds)
 
     for name in sorted(current_tables - target_tables):
         table = current.tables[name]

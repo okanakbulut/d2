@@ -13,7 +13,7 @@ import pypika.terms
 from pypika.utils import format_alias_sql, format_quotes
 
 from .filter import Filter, AnyFilter
-from .model import FieldDef, TableMeta
+from .model import FieldDef, ForeignKey, TableMeta
 from .dialect import Dialect, PostgresDialect
 from .query import InsertQuery, UpdateQuery, DeleteQuery, JoinClause
 
@@ -475,6 +475,7 @@ def _parse_fields(model: type) -> list[tuple[str, type, FieldDef, type[Field[Any
         index = base_flags.get("index", False)
         db_default = False
         col_name_override: str | None = None
+        fk: ForeignKey | None = None
 
         class_default = vars(model).get(attr_name)
         if isinstance(class_default, FieldDef):
@@ -484,6 +485,7 @@ def _parse_fields(model: type) -> list[tuple[str, type, FieldDef, type[Field[Any
                 unique = True
             if class_default.index:
                 index = True
+            fk = class_default.fk
 
         fd = FieldDef(
             primary_key=primary_key,
@@ -492,6 +494,7 @@ def _parse_fields(model: type) -> list[tuple[str, type, FieldDef, type[Field[Any
             db_default=db_default,
             name=col_name_override,
             nullable=nullable,
+            fk=fk,
         )
         result.append((attr_name, python_type, fd, field_cls))
 

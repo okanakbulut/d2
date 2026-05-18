@@ -159,13 +159,18 @@ def _format_drop_default(op: DropColumnDefault, indent: str) -> str:
 
 def _format_constraint_dict(c: dict) -> str:
     cols = "(" + ", ".join(_q(x) for x in c["columns"]) + (",)" if len(c["columns"]) == 1 else ")")
-    return (
-        "{"
-        f'"type": {_q(c["type"])}, '
-        f'"name": {_q(c["name"])}, '
-        f'"columns": {cols}'
-        "}"
-    )
+    parts = [
+        f'"type": {_q(c["type"])}',
+        f'"name": {_q(c["name"])}',
+        f'"columns": {cols}',
+    ]
+    if c["type"] == "foreign_key":
+        parts.append(f'"references_schema": {_q(c.get("references_schema"))}')
+        parts.append(f'"references_table": {_q(c["references_table"])}')
+        parts.append(f'"references_column": {_q(c["references_column"])}')
+        parts.append(f'"on_delete": {_q(c.get("on_delete"))}')
+        parts.append(f'"on_update": {_q(c.get("on_update"))}')
+    return "{" + ", ".join(parts) + "}"
 
 
 def _format_add_constraint(op: AddConstraint, indent: str) -> str:

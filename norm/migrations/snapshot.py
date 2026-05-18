@@ -11,7 +11,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from .naming import auto_index_name, auto_unique_name
+from .naming import auto_fk_name, auto_index_name, auto_unique_name
 from .operations import ColumnDef, CreateTable
 from .state import SchemaState
 
@@ -49,6 +49,65 @@ def _column_def_for_field(field: Any) -> ColumnDef:
         nullable=fd.nullable,
         primary_key=fd.primary_key,
     )
+
+
+def _resolve_fk_target(target: Any) -> tuple[str | None, str, str]:
+    """Resolve a `ForeignKey.to` value into (schema, table, column).
+
+    Accepts either a `Field` proxy (uses its `pika_field.table`) or a string
+    of the form `"schema.table.column"` or `"table.column"`.
+    """
+    from norm.schema import Field  # local import to avoid cycles
+
+    if isinstance(target, Field):
+        pika_field = target.pika_field
+        pika_table = pika_field.table
+        ref_table = pika_table.get_table_name()
+        schema_obj = getattr(pika_table, "_schema", None)
+        ref_schema = (
+            schema_obj.get_sql(quote_char='"').strip('"') if schema_obj else None
+        )
+        return ref_schema, ref_table, target.column_name
+
+    if isinstance(target, str):
+        parts = target.split(".")
+        if len(parts) == 3:
+            return parts[0], parts[1], parts[2]
+        if len(parts) == 2:
+            return None, parts[0], parts[1]
+        raise ValueError(
+            f"foreign-key string target must be 'schema.table.column' or "
+            f"'table.column'; got {target!r}"
+        )
+
+    raise TypeError(
+        f"ForeignKey.to must be a Field proxy or string; got {type(target).__name__}"
+    )
+
+
+def _fk_constraint_dict(
+    *,
+    table: str,
+    fk: Any,
+    columns: tuple[str, ...] | None = None,
+) -> dict:
+    ref_schema, ref_table, ref_column = _resolve_fk_target(fk.to)
+    cols = columns if columns is not None else fk.columns
+    if cols is None:
+        raise ValueError(
+            "ForeignKey declared on TableMeta must specify columns=(...,)"
+        )
+    name = fk.name or auto_fk_name(table, cols)
+    return {
+        "type": "foreign_key",
+        "name": name,
+        "columns": tuple(cols),
+        "references_schema": ref_schema,
+        "references_table": ref_table,
+        "references_column": ref_column,
+        "on_delete": fk.on_delete,
+        "on_update": fk.on_update,
+    }
 
 
 def models_to_schema_state(models: list[type]) -> SchemaState:
@@ -95,9 +154,19 @@ def models_to_schema_state(models: list[type]) -> SchemaState:
                         "method": None,
                     }
                 )
+            if fd.fk is not None:
+                table_state.constraints.append(
+                    _fk_constraint_dict(
+                        table=table_name, fk=fd.fk, columns=(col,),
+                    )
+                )
 
         meta = getattr(cls, "__meta__", None)
         if meta is not None:
+            for fk in getattr(meta, "foreign_keys", ()) or ():
+                table_state.constraints.append(
+                    _fk_constraint_dict(table=table_name, fk=fk)
+                )
             for idx in getattr(meta, "indexes", ()) or ():
                 cols = tuple(idx.columns)
                 idx_name = idx.name or (

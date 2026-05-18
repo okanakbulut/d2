@@ -32,3 +32,8 @@ def auto_index_name(table: str, columns: tuple[str, ...]) -> str:
 def auto_unique_name(table: str, columns: tuple[str, ...]) -> str:
     name = f"{table}_{'_'.join(columns)}_key"
     return _check(name, table=table, columns=columns)
+
+
+def auto_fk_name(table: str, columns: tuple[str, ...]) -> str:
+    name = f"{table}_{'_'.join(columns)}_fkey"
+    return _check(name, table=table, columns=columns)

@@ -101,13 +101,14 @@ def cmd_check(*, cwd: Path, migrations_dir: str | None = None, models: str | Non
     try:
         cfg = load_config(cwd, migrations_dir_override=migrations_dir, models_override=models)
         atomic_warnings = _check_atomic_mismatch(cfg)
+        ddl_warnings = _check_run_sql_ddl(cfg)
         (forward, _reverse), _ = _compute_diff(cfg)
     except Exception as exc:  # noqa: BLE001
         print(f"{cwd}:1: migration check failed: {exc}")
         return 2
 
-    if atomic_warnings:
-        for path, msg in atomic_warnings:
+    if atomic_warnings or ddl_warnings:
+        for path, msg in atomic_warnings + ddl_warnings:
             print(f"{path}:1: {msg}")
         return 1
 
@@ -143,6 +144,78 @@ def _check_atomic_mismatch(cfg: NormConfig) -> list[tuple[Path, str]]:
                     "CONCURRENTLY index ops; set atomic = False",
                 )
             )
+    return warnings
+
+
+_DDL_KEYWORDS = ("ALTER", "CREATE", "DROP", "TRUNCATE")
+
+
+def _strip_sql_noise(sql: str) -> str:
+    """Remove single/double-quoted strings and SQL comments for keyword scan."""
+    out: list[str] = []
+    i = 0
+    n = len(sql)
+    while i < n:
+        ch = sql[i]
+        if ch == "-" and i + 1 < n and sql[i + 1] == "-":
+            # Line comment.
+            nl = sql.find("\n", i)
+            i = n if nl == -1 else nl
+            continue
+        if ch == "/" and i + 1 < n and sql[i + 1] == "*":
+            end = sql.find("*/", i + 2)
+            i = n if end == -1 else end + 2
+            continue
+        if ch in ("'", '"'):
+            quote = ch
+            i += 1
+            while i < n:
+                if sql[i] == "\\" and i + 1 < n:
+                    i += 2
+                    continue
+                if sql[i] == quote:
+                    i += 1
+                    break
+                i += 1
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def _run_sql_contains_ddl(sql: str) -> str | None:
+    """Return the first DDL keyword found, else None."""
+    cleaned = _strip_sql_noise(sql).upper()
+    # Tokenise on word boundaries.
+    import re
+    tokens = re.findall(r"[A-Z]+", cleaned)
+    for kw in _DDL_KEYWORDS:
+        if kw in tokens:
+            return kw
+    return None
+
+
+def _check_run_sql_ddl(cfg: NormConfig) -> list[tuple[Path, str]]:
+    from .operations import RunSQL
+    from .replay import _load_migration
+
+    warnings: list[tuple[Path, str]] = []
+    for path in _existing_migration_files(cfg.migrations_dir):
+        mig_cls = _load_migration(path)
+        for op in list(mig_cls.operations) + list(mig_cls.reverse_operations or []):
+            if not isinstance(op, RunSQL):
+                continue
+            kw = _run_sql_contains_ddl(op.sql)
+            if kw is not None:
+                warnings.append(
+                    (
+                        path,
+                        f"{mig_cls.name}: RunSQL contains DDL keyword {kw!r}; "
+                        "use a typed DDL op (e.g. AlterColumnType, CreateTable) "
+                        "instead so the schema model stays in sync",
+                    )
+                )
+                break
     return warnings
 
 

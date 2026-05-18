@@ -12,8 +12,12 @@ from pathlib import Path
 from norm.connection import AsyncConnection
 
 from . import Migration
-from .operations import CreateIndex, DropIndex
+from .operations import CreateIndex, DropIndex, RunPython, RunSQL
 from .replay import _load_migration
+
+
+def _split_sql_statements(sql: str) -> list[str]:
+    return [stmt.strip() for stmt in sql.split(";") if stmt.strip()]
 
 
 _CREATE_TRACKING_TABLE = (
@@ -82,7 +86,7 @@ class MigrationRunner:
         raw = self._conn._conn
         for op in mig_cls.operations:
             try:
-                await raw.execute(op.to_ddl())
+                await self._execute_forward(op)
             except Exception:
                 self._print_recovery_for(op)
                 raise
@@ -90,6 +94,17 @@ class MigrationRunner:
             f"INSERT INTO {self._migrations_table} (name) VALUES ($1)",
             name,
         )
+
+    async def _execute_forward(self, op: object) -> None:
+        raw = self._conn._conn
+        if isinstance(op, RunSQL):
+            for stmt in _split_sql_statements(op.sql):
+                await raw.execute(stmt)
+            return
+        if isinstance(op, RunPython):
+            await op.fn(self._conn)
+            return
+        await raw.execute(op.to_ddl())
 
     async def rollback(self, name: str, *, force: bool = False) -> None:
         await self._ensure_tracking_table()
@@ -126,7 +141,7 @@ class MigrationRunner:
         raw = self._conn._conn
         for op in mig_cls.reverse_operations or []:
             try:
-                await raw.execute(op.to_ddl())
+                await self._execute_reverse(op, name)
             except Exception:
                 self._print_recovery_for(op)
                 raise
@@ -134,6 +149,27 @@ class MigrationRunner:
             f"DELETE FROM {self._migrations_table} WHERE name = $1",
             name,
         )
+
+    async def _execute_reverse(self, op: object, name: str) -> None:
+        raw = self._conn._conn
+        if isinstance(op, RunSQL):
+            if op.reverse_sql is None:
+                raise RuntimeError(
+                    f"cannot rollback {name!r}: RunSQL is missing reverse_sql; "
+                    "edit the migration file to provide one"
+                )
+            for stmt in _split_sql_statements(op.reverse_sql):
+                await raw.execute(stmt)
+            return
+        if isinstance(op, RunPython):
+            if op.reverse_fn is None:
+                raise RuntimeError(
+                    f"cannot rollback {name!r}: RunPython is missing reverse_fn; "
+                    "edit the migration file to provide one"
+                )
+            await op.reverse_fn(self._conn)
+            return
+        await raw.execute(op.to_ddl())
 
     def _print_recovery_for(self, op: object) -> None:
         if isinstance(op, CreateIndex) and op.concurrent:

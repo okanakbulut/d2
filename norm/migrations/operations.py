@@ -7,6 +7,7 @@ Each op has `apply(state)` (mutates SchemaState) and `to_ddl()` (returns SQL).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any, Awaitable, Callable
 
 from .state import ColumnState, SchemaError, SchemaState, TableState, ViewState
 
@@ -474,6 +475,38 @@ class CreateView:
             columns=tuple(self.columns),
             schema=self.schema,
         )
+
+
+@dataclass
+class RunSQL:
+    """Data-only escape hatch: execute raw SQL at apply time.
+
+    `apply(state)` is a no-op — RunSQL never mutates the schema model.
+    The runner splits `sql` on ``;`` and executes each non-empty statement.
+    `reverse_sql`, if provided, is executed on rollback.
+    """
+
+    sql: str
+    reverse_sql: str | None = None
+
+    def apply(self, state: SchemaState) -> None:  # noqa: ARG002
+        return None
+
+
+@dataclass
+class RunPython:
+    """Data-only escape hatch: run an async Python function at apply time.
+
+    `apply(state)` is a no-op. The runner awaits ``fn(conn)`` where ``conn``
+    is the norm ``AsyncConnection`` wrapper. ``reverse_fn``, if provided, is
+    awaited on rollback.
+    """
+
+    fn: Callable[[Any], Awaitable[None]]
+    reverse_fn: Callable[[Any], Awaitable[None]] | None = None
+
+    def apply(self, state: SchemaState) -> None:  # noqa: ARG002
+        return None
 
 
 @dataclass

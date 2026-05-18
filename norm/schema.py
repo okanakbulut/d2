@@ -1,6 +1,7 @@
 
 import re
 import typing
+from enum import Enum
 from typing import Any, ClassVar, Generic, Self, TypeVar, cast, overload
 
 import pypika
@@ -14,6 +15,11 @@ from .filter import Filter, AnyFilter
 from .model import FieldDef, TableMeta
 from .dialect import Dialect, PostgresDialect
 from .query import InsertQuery, UpdateQuery, DeleteQuery, JoinClause
+
+
+class JsonMode(str, Enum):
+    DECODED = "decoded"
+    RAW = "raw"
 
 
 _QUERY_STATE_KEYS: tuple[str, ...] = (
@@ -34,6 +40,7 @@ _QUERY_STATE_KEYS: tuple[str, ...] = (
     "__ctes__",
     "__recursive__",
     "__prefetches__",
+    "__as_json__",
 )
 
 _DEFAULTS: dict[str, Any] = {
@@ -54,6 +61,7 @@ _DEFAULTS: dict[str, Any] = {
     "__ctes__": (),
     "__recursive__": False,
     "__prefetches__": (),
+    "__as_json__": None,
 }
 
 
@@ -534,6 +542,7 @@ class Entity(metaclass=NormMeta):
     __ctes__: ClassVar[tuple[Any, ...]] = ()
     __recursive__: ClassVar[bool] = False
     __prefetches__: ClassVar[tuple[Any, ...]] = ()
+    __as_json__: ClassVar[JsonMode | None] = None
 
     @classmethod
     def clone(cls) -> type[Self]:
@@ -730,6 +739,12 @@ class Selectable(Entity):
         return q
 
     @classmethod
+    def json(cls, *, raw: bool = False) -> "type[Self]":
+        q = cls.clone()
+        q.__as_json__ = JsonMode.RAW if raw else JsonMode.DECODED
+        return q
+
+    @classmethod
     def as_scalar(cls) -> "Any":
         from .query import ScalarSubquery
         return ScalarSubquery(inner=cls)
@@ -789,10 +804,24 @@ class Selectable(Entity):
         if cls.__ctes__:
             return cls._build_with(dialect)
         params: list[Any] = []
+        if cls.__as_json__ is not None and cls.__alias__ is not None and cls.__inner__ is not None:
+            # .aliased("x").json(): wrap inner query in json_build_object(alias, json_agg(...))
+            inner = cls.__inner__
+            if getattr(inner, "__union_left__", None) is not None:
+                inner_sql = inner._build_set_op(params, dialect)
+            else:
+                inner_sql = inner.as_pypika(params, dialect).get_sql(quote_char='"')
+            alias = cls.__alias__
+            cast = "::text" if cls.__as_json__ is JsonMode.RAW else ""
+            sql = f"SELECT json_build_object('{alias}',COALESCE(json_agg(t),'[]'::json)){cast} FROM ({inner_sql}) t"
+            return sql, tuple(params)
         if cls.__union_left__ is not None:
             sql = cls._build_set_op(params, dialect)
         else:
             sql = cls.as_pypika(params, dialect).get_sql(quote_char='"')
+        if cls.__as_json__ is not None:
+            cast = "::text" if cls.__as_json__ is JsonMode.RAW else ""
+            sql = f"SELECT row_to_json(t){cast} FROM ({sql}) t"
         return sql, tuple(params)
 
     @classmethod

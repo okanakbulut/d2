@@ -176,3 +176,5 @@ async def test_transaction_rollback_on_exception(pg_conn: Any) -> None:
     assert rows == []
 
     await pg_conn.execute("DROP TABLE IF EXISTS public.txn_accounts")
+
+

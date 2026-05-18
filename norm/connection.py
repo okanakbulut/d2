@@ -1,4 +1,5 @@
 
+import json
 import typing
 from typing import Any, TypeVar, overload
 
@@ -16,6 +17,12 @@ class AsyncConnection:
     def __init__(self, conn: Any, dialect: Dialect = PostgresDialect()) -> None:
         self._conn = conn
         self._dialect = dialect
+        self._json_codec_registered = False
+
+    async def _ensure_json_codec(self) -> None:
+        if not self._json_codec_registered:
+            await self._conn.set_type_codec("json", encoder=json.dumps, decoder=json.loads, schema="pg_catalog")
+            self._json_codec_registered = True
 
     @overload
     async def fetch(self, qb: AnyQuery, result_type: type[list[T]]) -> list[T]: ...
@@ -23,7 +30,14 @@ class AsyncConnection:
     async def fetch(self, qb: AnyQuery, result_type: type[T]) -> T | None: ...
 
     async def fetch(self, qb: AnyQuery, result_type: Any) -> Any:
+        await self._ensure_json_codec()
         sql, params = qb.build(self._dialect)
+        if getattr(qb, '__as_json__', None) is not None:
+            val = await self._conn.fetchval(sql, *params)
+            if val is None:
+                return None
+            data = json.loads(val) if isinstance(val, str) else val
+            return msgspec.convert(data, result_type)
         if typing.get_origin(result_type) is list:
             item_type = typing.get_args(result_type)[0]
             rows = await self._conn.fetch(sql, *params)
@@ -34,8 +48,12 @@ class AsyncConnection:
         return msgspec.convert(dict(row), result_type)
 
     async def fetch_val(self, qb: AnyQuery) -> Any:
+        await self._ensure_json_codec()
         sql, params = qb.build(self._dialect)
-        return await self._conn.fetchval(sql, *params)
+        val = await self._conn.fetchval(sql, *params)
+        if getattr(qb, '__as_json__', None) is not None and isinstance(val, dict):
+            return json.dumps(val)
+        return val
 
     async def execute(self, qb: AnyQuery) -> Any:
         sql, params = qb.build(self._dialect)

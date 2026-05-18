@@ -14,7 +14,7 @@ PG_DSN = os.getenv("NORM_TEST_DSN", "postgresql://norm:norm@localhost:5432/norm_
 @pytest.fixture(scope="session")
 async def pg_conn() -> typing.AsyncGenerator[asyncpg.Connection, None]:
     conn = typing.cast(asyncpg.Connection, await asyncpg.connect(PG_DSN)) # type: ignore[reportUnknownMemberType]
-    await conn.set_type_codec("json", encoder=json_module.dumps, decoder=json_module.loads, schema="pg_catalog") # type: ignore[reportUnknownMemberType]
+    # await conn.set_type_codec("json", encoder=json_module.dumps, decoder=json_module.loads, schema="pg_catalog") # type: ignore[reportUnknownMemberType]
     yield conn
     await conn.close() # type: ignore[reportUnknownMemberType]
 

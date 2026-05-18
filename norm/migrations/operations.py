@@ -275,3 +275,117 @@ class DropColumnDefault:
     def apply(self, state: SchemaState) -> None:
         col = _require_column(state, self.table, self.column)
         col.default = None
+
+
+def _quote_cols(cols: tuple[str, ...]) -> str:
+    return ", ".join(f'"{c}"' for c in cols)
+
+
+def _constraint_sql(constraint: dict) -> str:
+    ctype = constraint["type"]
+    name = constraint["name"]
+    if ctype == "unique":
+        cols = _quote_cols(tuple(constraint["columns"]))
+        return f'CONSTRAINT "{name}" UNIQUE ({cols})'
+    raise ValueError(f"unsupported constraint type: {ctype!r}")
+
+
+@dataclass
+class AddConstraint:
+    table: str
+    constraint: dict
+    schema: str | None = None
+
+    def to_ddl(self) -> str:
+        body = (
+            f"ALTER TABLE {_qualify(self.schema, self.table)} "
+            f"ADD {_constraint_sql(self.constraint)};"
+        )
+        return (
+            "DO $$ BEGIN "
+            f"{body} "
+            "EXCEPTION WHEN duplicate_object THEN NULL; END $$"
+        )
+
+    def apply(self, state: SchemaState) -> None:
+        t = _require_table(state, self.table)
+        t.constraints.append(dict(self.constraint))
+
+
+@dataclass
+class DropConstraint:
+    table: str
+    name: str
+    schema: str | None = None
+
+    def to_ddl(self) -> str:
+        return (
+            f"ALTER TABLE {_qualify(self.schema, self.table)} "
+            f'DROP CONSTRAINT IF EXISTS "{self.name}"'
+        )
+
+    def apply(self, state: SchemaState) -> None:
+        t = _require_table(state, self.table)
+        t.constraints = [c for c in t.constraints if c.get("name") != self.name]
+
+
+@dataclass
+class CreateIndex:
+    table: str
+    columns: tuple[str, ...]
+    name: str
+    method: str | None = None
+    unique: bool = False
+    concurrent: bool = True
+    schema: str | None = None
+
+    def to_ddl(self) -> str:
+        parts = ["CREATE"]
+        if self.unique:
+            parts.append("UNIQUE")
+        parts.append("INDEX")
+        if self.concurrent:
+            parts.append("CONCURRENTLY")
+        parts.append("IF NOT EXISTS")
+        parts.append(f'"{self.name}"')
+        parts.append("ON")
+        parts.append(_qualify(self.schema, self.table))
+        if self.method:
+            parts.append(f"USING {self.method}")
+        parts.append(f"({_quote_cols(self.columns)})")
+        return " ".join(parts)
+
+    def apply(self, state: SchemaState) -> None:
+        t = _require_table(state, self.table)
+        t.indexes.append(
+            {
+                "name": self.name,
+                "columns": tuple(self.columns),
+                "unique": self.unique,
+                "method": self.method,
+            }
+        )
+
+
+@dataclass
+class DropIndex:
+    name: str
+    concurrent: bool = True
+    schema: str | None = None
+    # `table` retained on state when applied for replay; not used in DDL.
+    table: str | None = None
+
+    def to_ddl(self) -> str:
+        parts = ["DROP INDEX"]
+        if self.concurrent:
+            parts.append("CONCURRENTLY")
+        parts.append("IF EXISTS")
+        if self.schema:
+            parts.append(f'"{self.schema}"."{self.name}"')
+        else:
+            parts.append(f'"{self.name}"')
+        return " ".join(parts)
+
+    def apply(self, state: SchemaState) -> None:
+        for table in state.tables.values():
+            table.indexes = [i for i in table.indexes if i.get("name") != self.name]

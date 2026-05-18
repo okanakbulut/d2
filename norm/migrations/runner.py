@@ -12,6 +12,7 @@ from pathlib import Path
 from norm.connection import AsyncConnection
 
 from . import Migration
+from .operations import CreateIndex, DropIndex
 from .replay import _load_migration
 
 
@@ -80,8 +81,32 @@ class MigrationRunner:
     async def _run_ops_and_record(self, name: str, mig_cls: type[Migration]) -> None:
         raw = self._conn._conn
         for op in mig_cls.operations:
-            await raw.execute(op.to_ddl())
+            try:
+                await raw.execute(op.to_ddl())
+            except Exception:
+                self._print_recovery_for(op)
+                raise
         await raw.execute(
             f"INSERT INTO {self._migrations_table} (name) VALUES ($1)",
             name,
         )
+
+    def _print_recovery_for(self, op: object) -> None:
+        if isinstance(op, CreateIndex) and op.concurrent:
+            qual = (
+                f'"{op.schema}"."{op.name}"' if op.schema else f'"{op.name}"'
+            )
+            print(
+                "Migration failed during CONCURRENTLY index creation. "
+                "An INVALID index may be left behind; recover with:"
+            )
+            print(f"  DROP INDEX CONCURRENTLY IF EXISTS {qual};")
+        elif isinstance(op, DropIndex) and op.concurrent:
+            qual = (
+                f'"{op.schema}"."{op.name}"' if op.schema else f'"{op.name}"'
+            )
+            print(
+                "Migration failed during CONCURRENTLY index drop; "
+                "retry after manual cleanup:"
+            )
+            print(f"  DROP INDEX CONCURRENTLY IF EXISTS {qual};")

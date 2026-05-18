@@ -6,12 +6,16 @@ from pathlib import Path
 
 from .operations import (
     AddColumn,
+    AddConstraint,
     AlterColumnType,
     ColumnDef,
+    CreateIndex,
     CreateTable,
     DropColumn,
     DropColumnDefault,
     DropColumnNotNull,
+    DropConstraint,
+    DropIndex,
     DropTable,
     RenameColumn,
     SetColumnDefault,
@@ -23,17 +27,29 @@ from .operations import (
 # for the migration file's `from norm.migrations.operations import ...` line.
 _SUPPORTED_OPS: tuple[type, ...] = (
     AddColumn,
+    AddConstraint,
     AlterColumnType,
     ColumnDef,
+    CreateIndex,
     CreateTable,
     DropColumn,
     DropColumnDefault,
     DropColumnNotNull,
+    DropConstraint,
+    DropIndex,
     DropTable,
     RenameColumn,
     SetColumnDefault,
     SetColumnNotNull,
 )
+
+
+def _is_non_transactional(op: object) -> bool:
+    if isinstance(op, CreateIndex) and op.concurrent:
+        return True
+    if isinstance(op, DropIndex) and op.concurrent:
+        return True
+    return False
 _IMPORT_NAMES = ", ".join(sorted(c.__name__ for c in _SUPPORTED_OPS))
 
 
@@ -141,6 +157,56 @@ def _format_drop_default(op: DropColumnDefault, indent: str) -> str:
     )
 
 
+def _format_constraint_dict(c: dict) -> str:
+    cols = "(" + ", ".join(_q(x) for x in c["columns"]) + (",)" if len(c["columns"]) == 1 else ")")
+    return (
+        "{"
+        f'"type": {_q(c["type"])}, '
+        f'"name": {_q(c["name"])}, '
+        f'"columns": {cols}'
+        "}"
+    )
+
+
+def _format_add_constraint(op: AddConstraint, indent: str) -> str:
+    return (
+        f"{indent}AddConstraint(table={_q(op.table)}, "
+        f"constraint={_format_constraint_dict(op.constraint)}, "
+        f"schema={_q(op.schema)}),"
+    )
+
+
+def _format_drop_constraint(op: DropConstraint, indent: str) -> str:
+    return (
+        f"{indent}DropConstraint(table={_q(op.table)}, name={_q(op.name)}, "
+        f"schema={_q(op.schema)}),"
+    )
+
+
+def _format_columns_tuple(cols: tuple[str, ...]) -> str:
+    inside = ", ".join(_q(c) for c in cols)
+    if len(cols) == 1:
+        return f"({inside},)"
+    return f"({inside})"
+
+
+def _format_create_index(op: CreateIndex, indent: str) -> str:
+    return (
+        f"{indent}CreateIndex(table={_q(op.table)}, "
+        f"columns={_format_columns_tuple(tuple(op.columns))}, "
+        f"name={_q(op.name)}, method={_q(op.method)}, "
+        f"unique={_q(op.unique)}, concurrent={_q(op.concurrent)}, "
+        f"schema={_q(op.schema)}),"
+    )
+
+
+def _format_drop_index(op: DropIndex, indent: str) -> str:
+    return (
+        f"{indent}DropIndex(name={_q(op.name)}, concurrent={_q(op.concurrent)}, "
+        f"schema={_q(op.schema)}, table={_q(op.table)}),"
+    )
+
+
 def _format_op(op: object, indent: str) -> str:
     if isinstance(op, CreateTable):
         return _format_create_table(op, indent)
@@ -162,6 +228,14 @@ def _format_op(op: object, indent: str) -> str:
         return _format_set_default(op, indent)
     if isinstance(op, DropColumnDefault):
         return _format_drop_default(op, indent)
+    if isinstance(op, AddConstraint):
+        return _format_add_constraint(op, indent)
+    if isinstance(op, DropConstraint):
+        return _format_drop_constraint(op, indent)
+    if isinstance(op, CreateIndex):
+        return _format_create_index(op, indent)
+    if isinstance(op, DropIndex):
+        return _format_drop_index(op, indent)
     raise TypeError(f"codegen does not support op type {type(op).__name__}")
 
 
@@ -171,15 +245,26 @@ def _render(
     forward: list,
     reverse: list,
 ) -> str:
+    non_atomic = any(_is_non_transactional(op) for op in forward) or any(
+        _is_non_transactional(op) for op in reverse
+    )
+
     lines: list[str] = []
     lines.append("from norm.migrations import Migration")
     lines.append(f"from norm.migrations.operations import {_IMPORT_NAMES}")
     lines.append("")
+    if non_atomic:
+        lines.append(
+            "# atomic = False because this migration contains "
+            "non-transactional operations (CONCURRENTLY)."
+        )
     lines.append("")
     lines.append("class Migration(Migration):")
     lines.append(f'    name = "{name}"')
     dep_items = ", ".join(f'"{d}"' for d in dependencies)
     lines.append(f"    dependencies = [{dep_items}]")
+    if non_atomic:
+        lines.append("    atomic = False")
     lines.append("    operations = [")
     for op in forward:
         lines.append(_format_op(op, "        "))

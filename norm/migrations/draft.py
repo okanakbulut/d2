@@ -11,12 +11,16 @@ from __future__ import annotations
 
 from .operations import (
     AddColumn,
+    AddConstraint,
     AlterColumnType,
     ColumnDef,
+    CreateIndex,
     CreateTable,
     DropColumn,
     DropColumnDefault,
     DropColumnNotNull,
+    DropConstraint,
+    DropIndex,
     DropTable,
     SetColumnDefault,
     SetColumnNotNull,
@@ -168,11 +172,25 @@ def diff_states(
         table = target.tables[name]
         forward.append(_create_table_from_state(name, table))
         reverse.append(DropTable(table=name, schema=table.schema))
+        for c in table.constraints:
+            forward.append(
+                AddConstraint(table=name, constraint=dict(c), schema=table.schema)
+            )
+        for idx in table.indexes:
+            forward.append(_create_index_from_state(name, table.schema, idx))
+        # DropTable in reverse removes everything; no separate cleanup needed.
 
     for name in sorted(current_tables - target_tables):
         table = current.tables[name]
         forward.append(DropTable(table=name, schema=table.schema))
-        reverse.append(_create_table_from_state(name, table))
+        rev_create = _create_table_from_state(name, table)
+        reverse.append(rev_create)
+        for c in table.constraints:
+            reverse.append(
+                AddConstraint(table=name, constraint=dict(c), schema=table.schema)
+            )
+        for idx in table.indexes:
+            reverse.append(_create_index_from_state(name, table.schema, idx))
 
     for name in sorted(current_tables & target_tables):
         cur_t = current.tables[name]
@@ -182,5 +200,73 @@ def diff_states(
         )
         forward.extend(col_fwd)
         reverse.extend(col_rev)
+        cons_fwd, cons_rev = _diff_constraints(
+            name, tgt_t.schema, cur_t.constraints, tgt_t.constraints
+        )
+        forward.extend(cons_fwd)
+        reverse.extend(cons_rev)
+        idx_fwd, idx_rev = _diff_indexes(
+            name, tgt_t.schema, cur_t.indexes, tgt_t.indexes
+        )
+        forward.extend(idx_fwd)
+        reverse.extend(idx_rev)
 
+    return forward, reverse
+
+
+def _diff_constraints(
+    table: str,
+    schema: str | None,
+    current: list[dict],
+    target: list[dict],
+) -> tuple[list, list]:
+    forward: list = []
+    reverse: list = []
+    cur_by_name = {c["name"]: c for c in current}
+    tgt_by_name = {c["name"]: c for c in target}
+    for name, c in tgt_by_name.items():
+        if name not in cur_by_name:
+            forward.append(AddConstraint(table=table, constraint=dict(c), schema=schema))
+            reverse.append(DropConstraint(table=table, name=name, schema=schema))
+    for name, c in cur_by_name.items():
+        if name not in tgt_by_name:
+            forward.append(DropConstraint(table=table, name=name, schema=schema))
+            reverse.append(AddConstraint(table=table, constraint=dict(c), schema=schema))
+    return forward, reverse
+
+
+def _create_index_from_state(table: str, schema: str | None, idx: dict) -> CreateIndex:
+    return CreateIndex(
+        table=table,
+        columns=tuple(idx["columns"]),
+        name=idx["name"],
+        method=idx.get("method"),
+        unique=idx.get("unique", False),
+        concurrent=True,
+        schema=schema,
+    )
+
+
+def _diff_indexes(
+    table: str,
+    schema: str | None,
+    current: list[dict],
+    target: list[dict],
+) -> tuple[list, list]:
+    forward: list = []
+    reverse: list = []
+    cur_by_name = {i["name"]: i for i in current}
+    tgt_by_name = {i["name"]: i for i in target}
+    for name, i in tgt_by_name.items():
+        if name not in cur_by_name:
+            forward.append(_create_index_from_state(table, schema, i))
+            reverse.append(
+                DropIndex(name=name, concurrent=True, schema=schema, table=table)
+            )
+    for name, i in cur_by_name.items():
+        if name not in tgt_by_name:
+            forward.append(
+                DropIndex(name=name, concurrent=True, schema=schema, table=table)
+            )
+            reverse.append(_create_index_from_state(table, schema, i))
     return forward, reverse

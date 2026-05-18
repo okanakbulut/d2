@@ -11,6 +11,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
+from .naming import auto_index_name, auto_unique_name
 from .operations import ColumnDef, CreateTable
 from .state import SchemaState
 
@@ -72,4 +73,44 @@ def models_to_schema_state(models: list[type]) -> SchemaState:
         if schema_str:
             schema_str = schema_str.strip('"')
         CreateTable(table=table_name, columns=columns, schema=schema_str).apply(state)
+
+        table_state = state.tables[table_name]
+        for f in cls.__fields__:
+            fd = f.field_def
+            col = f.column_name
+            if fd.unique:
+                table_state.constraints.append(
+                    {
+                        "type": "unique",
+                        "name": auto_unique_name(table_name, (col,)),
+                        "columns": (col,),
+                    }
+                )
+            if fd.index:
+                table_state.indexes.append(
+                    {
+                        "name": auto_index_name(table_name, (col,)),
+                        "columns": (col,),
+                        "unique": False,
+                        "method": None,
+                    }
+                )
+
+        meta = getattr(cls, "__meta__", None)
+        if meta is not None:
+            for idx in getattr(meta, "indexes", ()) or ():
+                cols = tuple(idx.columns)
+                idx_name = idx.name or (
+                    auto_unique_name(table_name, cols)
+                    if idx.unique
+                    else auto_index_name(table_name, cols)
+                )
+                table_state.indexes.append(
+                    {
+                        "name": idx_name,
+                        "columns": cols,
+                        "unique": idx.unique,
+                        "method": idx.method,
+                    }
+                )
     return state

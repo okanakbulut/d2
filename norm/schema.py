@@ -480,6 +480,10 @@ def _parse_fields(model: type) -> list[tuple[str, type, FieldDef, type[Field[Any
         if isinstance(class_default, FieldDef):
             db_default = class_default.db_default
             col_name_override = class_default.name
+            if class_default.unique:
+                unique = True
+            if class_default.index:
+                index = True
 
         fd = FieldDef(
             primary_key=primary_key,

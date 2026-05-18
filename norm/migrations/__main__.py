@@ -100,10 +100,16 @@ def cmd_make(*, cwd: Path, migrations_dir: str | None = None, models: str | None
 def cmd_check(*, cwd: Path, migrations_dir: str | None = None, models: str | None = None) -> int:
     try:
         cfg = load_config(cwd, migrations_dir_override=migrations_dir, models_override=models)
+        atomic_warnings = _check_atomic_mismatch(cfg)
         (forward, _reverse), _ = _compute_diff(cfg)
     except Exception as exc:  # noqa: BLE001
         print(f"{cwd}:1: migration check failed: {exc}")
         return 2
+
+    if atomic_warnings:
+        for path, msg in atomic_warnings:
+            print(f"{path}:1: {msg}")
+        return 1
 
     if not forward:
         return 0
@@ -113,6 +119,31 @@ def cmd_check(*, cwd: Path, migrations_dir: str | None = None, models: str | Non
         models_file = cwd / cfg.models.replace(".", "/") / "__init__.py"
     print(f"{models_file}:1: schema drift detected")
     return 1
+
+
+def _check_atomic_mismatch(cfg: NormConfig) -> list[tuple[Path, str]]:
+    from .operations import CreateIndex, DropIndex
+    from .replay import _load_migration
+
+    warnings: list[tuple[Path, str]] = []
+    for path in _existing_migration_files(cfg.migrations_dir):
+        mig_cls = _load_migration(path)
+        if not mig_cls.atomic:
+            continue
+        has_non_tx = any(
+            (isinstance(op, CreateIndex) and op.concurrent)
+            or (isinstance(op, DropIndex) and op.concurrent)
+            for op in mig_cls.operations
+        )
+        if has_non_tx:
+            warnings.append(
+                (
+                    path,
+                    f"{mig_cls.name}: atomic = True but operations include "
+                    "CONCURRENTLY index ops; set atomic = False",
+                )
+            )
+    return warnings
 
 
 async def cmd_apply(*, cwd: Path, dsn: str, migrations_dir: str | None = None, models: str | None = None) -> int:

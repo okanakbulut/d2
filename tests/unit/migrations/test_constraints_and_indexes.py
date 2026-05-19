@@ -18,9 +18,11 @@ from norm.migrations.operations import (
 )
 from norm.migrations.state import (
     ColumnState,
+    IndexDef,
     SchemaError,
     SchemaState,
     TableState,
+    UniqueConstraint,
 )
 
 
@@ -77,7 +79,9 @@ class TestAddConstraint:
             "columns": ("email",),
         }
         AddConstraint(table="users", schema="public", constraint=constraint).apply(state)
-        assert state.tables["users"].constraints == [constraint]
+        assert state.tables["users"].constraints == [
+            UniqueConstraint(name="users_email_key", columns=("email",))
+        ]
 
     def test_apply_raises_when_table_missing(self):
         with pytest.raises(SchemaError):
@@ -102,12 +106,12 @@ class TestDropConstraint:
     def test_apply_removes_matching_constraint(self):
         state = _state_with("t")
         state.tables["t"].constraints = [
-            {"type": "unique", "name": "t_x_key", "columns": ("x",)},
-            {"type": "unique", "name": "t_y_key", "columns": ("y",)},
+            UniqueConstraint(name="t_x_key", columns=("x",)),
+            UniqueConstraint(name="t_y_key", columns=("y",)),
         ]
         DropConstraint(table="t", name="t_x_key").apply(state)
         assert state.tables["t"].constraints == [
-            {"type": "unique", "name": "t_y_key", "columns": ("y",)},
+            UniqueConstraint(name="t_y_key", columns=("y",)),
         ]
 
 
@@ -164,7 +168,7 @@ class TestCreateIndex:
             unique=False,
         ).apply(state)
         assert state.tables["t"].indexes == [
-            {"name": "idx_t_x", "columns": ("x",), "unique": False, "method": None},
+            IndexDef(name="idx_t_x", columns=("x",), unique=False, method=None),
         ]
 
 
@@ -184,12 +188,12 @@ class TestDropIndex:
     def test_apply_removes_matching_index(self):
         state = _state_with("t")
         state.tables["t"].indexes = [
-            {"name": "idx_t_x", "columns": ("x",), "unique": False, "method": None},
-            {"name": "idx_t_y", "columns": ("y",), "unique": False, "method": None},
+            IndexDef(name="idx_t_x", columns=("x",), unique=False, method=None),
+            IndexDef(name="idx_t_y", columns=("y",), unique=False, method=None),
         ]
         DropIndex(name="idx_t_x").apply(state)
         assert state.tables["t"].indexes == [
-            {"name": "idx_t_y", "columns": ("y",), "unique": False, "method": None},
+            IndexDef(name="idx_t_y", columns=("y",), unique=False, method=None),
         ]
 
 
@@ -245,11 +249,7 @@ class TestSnapshotConstraintsAndIndexes:
         state = models_to_schema_state([SnapUniqueUser])
         t = state.tables["snap_unique_user"]
         assert t.constraints == [
-            {
-                "type": "unique",
-                "name": "snap_unique_user_email_key",
-                "columns": ("email",),
-            }
+            UniqueConstraint(name="snap_unique_user_email_key", columns=("email",))
         ]
         assert t.indexes == []
 
@@ -265,23 +265,18 @@ class TestSnapshotConstraintsAndIndexes:
         t = state.tables["snap_indexed_user"]
         assert t.constraints == []
         assert t.indexes == [
-            {
-                "name": "idx_snap_indexed_user_email",
-                "columns": ("email",),
-                "unique": False,
-                "method": None,
-            }
+            IndexDef(name="idx_snap_indexed_user_email", columns=("email",), unique=False, method=None)
         ]
 
     def test_table_meta_indexes_added_to_snapshot(self):
+        import norm.model as _model
         from norm.migrations.snapshot import models_to_schema_state
-        from norm.model import IndexDef, TableMeta
         from norm.schema import Field, Table
 
         class SnapEvent(Table):
-            __meta__ = TableMeta(
+            __meta__ = _model.TableMeta(
                 indexes=(
-                    IndexDef(columns=("a", "b"), name="idx_snap_event_a_b"),
+                    _model.IndexDef(columns=("a", "b"), name="idx_snap_event_a_b"),
                 ),
             )
             a: Field[str]
@@ -290,12 +285,7 @@ class TestSnapshotConstraintsAndIndexes:
         state = models_to_schema_state([SnapEvent])
         t = state.tables["snap_event"]
         assert t.indexes == [
-            {
-                "name": "idx_snap_event_a_b",
-                "columns": ("a", "b"),
-                "unique": False,
-                "method": None,
-            }
+            IndexDef(name="idx_snap_event_a_b", columns=("a", "b"), unique=False, method=None)
         ]
 
 
@@ -312,16 +302,14 @@ class TestDiffConstraintsAndIndexes:
         target.tables["t"] = TableState(
             columns={"email": ColumnState(type="TEXT", nullable=False)},
             schema="public",
-            constraints=[
-                {"type": "unique", "name": "t_email_key", "columns": ("email",)},
-            ],
+            constraints=[UniqueConstraint(name="t_email_key", columns=("email",))],
         )
 
         forward, reverse = diff_states(current, target)
         assert forward == [
             AddConstraint(
                 table="t",
-                constraint={"type": "unique", "name": "t_email_key", "columns": ("email",)},
+                constraint=UniqueConstraint(name="t_email_key", columns=("email",)),
                 schema="public",
             )
         ]
@@ -332,12 +320,12 @@ class TestDiffConstraintsAndIndexes:
     def test_dropped_unique_constraint_yields_drop_and_reverse_add(self):
         from norm.migrations.draft import diff_states
 
-        constraint = {"type": "unique", "name": "t_email_key", "columns": ("email",)}
+        constraint = UniqueConstraint(name="t_email_key", columns=("email",))
         current = SchemaState()
         current.tables["t"] = TableState(
             columns={"email": ColumnState(type="TEXT", nullable=False)},
             schema="public",
-            constraints=[dict(constraint)],
+            constraints=[constraint],
         )
         target = SchemaState()
         target.tables["t"] = TableState(
@@ -365,9 +353,7 @@ class TestDiffConstraintsAndIndexes:
         target.tables["t"] = TableState(
             columns={"x": ColumnState(type="TEXT", nullable=False)},
             schema="public",
-            indexes=[
-                {"name": "idx_t_x", "columns": ("x",), "unique": False, "method": None},
-            ],
+            indexes=[IndexDef(name="idx_t_x", columns=("x",), unique=False, method=None)],
         )
 
         forward, reverse = diff_states(current, target)
@@ -387,12 +373,12 @@ class TestDiffConstraintsAndIndexes:
     def test_dropped_index_yields_drop_and_reverse_create(self):
         from norm.migrations.draft import diff_states
 
-        idx = {"name": "idx_t_x", "columns": ("x",), "unique": False, "method": None}
+        idx = IndexDef(name="idx_t_x", columns=("x",), unique=False, method=None)
         current = SchemaState()
         current.tables["t"] = TableState(
             columns={"x": ColumnState(type="TEXT", nullable=False)},
             schema="public",
-            indexes=[dict(idx)],
+            indexes=[idx],
         )
         target = SchemaState()
         target.tables["t"] = TableState(

@@ -4,19 +4,22 @@ Tracer slice (issue 140) implements `CreateTable` + `ColumnDef` only.
 Each op has `apply(state)` (mutates SchemaState) and `to_ddl()` (returns SQL).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Union
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, ClassVar, Union
 
 from .state import (
     ColumnState,
+    Constraint,
     ConstraintDict,
+    ForeignKeyConstraint,
+    IndexDef,
     IndexDict,
     SchemaError,
     SchemaState,
     TableState,
+    UniqueConstraint,
     ViewState,
+    serial_display_type,
 )
 
 if TYPE_CHECKING:
@@ -28,60 +31,127 @@ ConstraintList = list[ConstraintDict]
 IndexList = list[IndexDict]
 RunPythonFn = Callable[["AsyncConnection"], Awaitable[None]]
 
-
-# SERIAL macro → underlying integer type. Per ADR-0004, state stores the
-# integer type and a `has_sequence_default` flag; DDL still emits the macro.
-_SERIAL_TO_INT: dict[str, str] = {
-    "SERIAL": "INTEGER",
-    "BIGSERIAL": "BIGINT",
-    "SMALLSERIAL": "SMALLINT",
-}
+# Backward-compatible alias: migration files on disk use ColumnDef(...).
+# ColumnState normalizes SERIAL types in __post_init__ so ColumnDef(type="BIGSERIAL", ...)
+# behaves identically to the old ColumnDef.to_column_state() path.
+ColumnDef = ColumnState
 
 
-@dataclass
-class ColumnDef:
-    type: str
-    nullable: bool = True
-    default: str | None = None
-    primary_key: bool = False
+# ---------------------------------------------------------------------------
+# Op registry — auto-populated via _OpBase.__init_subclass__
+# ---------------------------------------------------------------------------
 
-    def to_ddl(self, name: str) -> str:
-        parts = [f'"{name}"', self.type]
-        if not self.nullable:
-            parts.append("NOT NULL")
-        if self.default is not None:
-            parts.append(f"DEFAULT {self.default}")
-        if self.primary_key:
-            parts.append("PRIMARY KEY")
-        return " ".join(parts)
-
-    def to_column_state(self) -> ColumnState:
-        upper = self.type.upper()
-        if upper in _SERIAL_TO_INT:
-            return ColumnState(
-                type=_SERIAL_TO_INT[upper],
-                nullable=self.nullable,
-                default=self.default,
-                primary_key=self.primary_key,
-                has_sequence_default=True,
-            )
-        return ColumnState(
-            type=self.type,
-            nullable=self.nullable,
-            default=self.default,
-            primary_key=self.primary_key,
-            has_sequence_default=False,
-        )
+OP_REGISTRY: dict[str, type] = {}
 
 
-def _qualify(schema: str | None, table: str) -> str:
+class _OpBase:
+    """Non-dataclass mixin that registers each concrete op class by its import name."""
+
+    _import_name: ClassVar[str]
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        name = cls.__dict__.get("_import_name")
+        if name is not None:
+            OP_REGISTRY[name] = cls
+
+
+# ---------------------------------------------------------------------------
+# Source-rendering helpers (used by to_source() methods below)
+# ---------------------------------------------------------------------------
+
+def _q(value: Any) -> str:
+    """Render a Python literal preferring double-quoted strings."""
+    if value is None:
+        return "None"
+    if isinstance(value, bool):
+        return "True" if value else "False"
+    if isinstance(value, str):
+        escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{escaped}"'
+    return repr(value)
+
+
+def _format_columndef(cd: ColumnState) -> str:
+    display_type = serial_display_type(cd.type, cd.has_sequence_default)
+    return (
+        f"ColumnDef(type={_q(display_type)}, nullable={_q(cd.nullable)}, "
+        f"default={_q(cd.default)}, primary_key={_q(cd.primary_key)})"
+    )
+
+
+def _format_columns_tuple(cols: tuple[str, ...]) -> str:
+    inside = ", ".join(_q(c) for c in cols)
+    if len(cols) == 1:
+        return f"({inside},)"
+    return f"({inside})"
+
+
+def _format_type(t: type) -> str:
+    mod = getattr(t, "__module__", "builtins")
+    name = getattr(t, "__qualname__", t.__name__)
+    if mod == "builtins":
+        return name
+    return f"{mod}.{name}"
+
+
+def _format_view_columns(cols: tuple[tuple[str, type], ...]) -> str:
+    if not cols:
+        return "()"
+    parts = [f"({_q(n)}, {_format_type(t)})" for n, t in cols]
+    if len(parts) == 1:
+        return f"({parts[0]},)"
+    return "(" + ", ".join(parts) + ")"
+
+
+def _format_constraint(c: Constraint | ConstraintDict) -> str:
+    """Render a constraint as a dict literal string for migration files."""
+    if isinstance(c, UniqueConstraint):
+        cols = "(" + ", ".join(_q(x) for x in c.columns) + (",)" if len(c.columns) == 1 else ")")
+        parts = [
+            f'"type": {_q("unique")}',
+            f'"name": {_q(c.name)}',
+            f'"columns": {cols}',
+        ]
+        return "{" + ", ".join(parts) + "}"
+    if isinstance(c, ForeignKeyConstraint):
+        cols = "(" + ", ".join(_q(x) for x in c.columns) + (",)" if len(c.columns) == 1 else ")")
+        parts = [
+            f'"type": {_q("foreign_key")}',
+            f'"name": {_q(c.name)}',
+            f'"columns": {cols}',
+            f'"references_schema": {_q(c.references_schema)}',
+            f'"references_table": {_q(c.references_table)}',
+            f'"references_column": {_q(c.references_column)}',
+            f'"on_delete": {_q(c.on_delete)}',
+            f'"on_update": {_q(c.on_update)}',
+        ]
+        return "{" + ", ".join(parts) + "}"
+    # Plain dict — backward compat path for callers that build ops manually.
+    cols = "(" + ", ".join(_q(x) for x in c["columns"]) + (",)" if len(c["columns"]) == 1 else ")")
+    parts = [
+        f'"type": {_q(c["type"])}',
+        f'"name": {_q(c["name"])}',
+        f'"columns": {cols}',
+    ]
+    if c["type"] == "foreign_key":
+        parts.append(f'"references_schema": {_q(c.get("references_schema"))}')
+        parts.append(f'"references_table": {_q(c["references_table"])}')
+        parts.append(f'"references_column": {_q(c["references_column"])}')
+        parts.append(f'"on_delete": {_q(c.get("on_delete"))}')
+        parts.append(f'"on_update": {_q(c.get("on_update"))}')
+    return "{" + ", ".join(parts) + "}"
+
+
+def qualify(schema: str | None, table: str) -> str:
     if schema:
         return f'"{schema}"."{table}"'
     return f'"{table}"'
 
 
 @dataclass
-class CreateTable:
+class CreateTable(_OpBase):
+    _import_name: ClassVar[str] = "CreateTable"
     table: str
     columns: dict[str, ColumnDef]
     schema: str | None = None
@@ -89,42 +159,57 @@ class CreateTable:
     def to_ddl(self) -> str:
         col_ddls = [cd.to_ddl(name) for name, cd in self.columns.items()]
         return (
-            f"CREATE TABLE IF NOT EXISTS {_qualify(self.schema, self.table)} "
+            f"CREATE TABLE IF NOT EXISTS {qualify(self.schema, self.table)} "
             f"({', '.join(col_ddls)})"
         )
 
+    def to_source(self, indent: str) -> str:
+        lines = [f"{indent}CreateTable("]
+        lines.append(f"{indent}    table={_q(self.table)},")
+        lines.append(f"{indent}    schema={_q(self.schema)},")
+        lines.append(f"{indent}    columns={{")
+        for col_name, cd in self.columns.items():
+            lines.append(f"{indent}        {_q(col_name)}: {_format_columndef(cd)},")
+        lines.append(f"{indent}    }},")
+        lines.append(f"{indent}),")
+        return "\n".join(lines)
+
     def apply(self, state: SchemaState) -> None:
-        cols = {name: cd.to_column_state() for name, cd in self.columns.items()}
-        state.tables[self.table] = TableState(columns=cols, schema=self.schema)
+        state.tables[self.table] = TableState(columns=dict(self.columns), schema=self.schema)
 
 
 @dataclass
-class DropTable:
+class DropTable(_OpBase):
+    _import_name: ClassVar[str] = "DropTable"
     table: str
     schema: str | None = None
 
     def to_ddl(self) -> str:
-        return f"DROP TABLE IF EXISTS {_qualify(self.schema, self.table)}"
+        return f"DROP TABLE IF EXISTS {qualify(self.schema, self.table)}"
+
+    def to_source(self, indent: str) -> str:
+        return f"{indent}DropTable(table={_q(self.table)}, schema={_q(self.schema)}),"
 
     def apply(self, state: SchemaState) -> None:
         state.tables.pop(self.table, None)
 
 
-def _require_table(state: SchemaState, table: str) -> TableState:
+def require_table(state: SchemaState, table: str) -> TableState:
     if table not in state.tables:
         raise SchemaError(f"table {table!r} does not exist")
     return state.tables[table]
 
 
-def _require_column(state: SchemaState, table: str, column: str) -> ColumnState:
-    t = _require_table(state, table)
+def require_column(state: SchemaState, table: str, column: str) -> ColumnState:
+    t = require_table(state, table)
     if column not in t.columns:
         raise SchemaError(f"column {column!r} does not exist on {table!r}")
     return t.columns[column]
 
 
 @dataclass
-class AddColumn:
+class AddColumn(_OpBase):
+    _import_name: ClassVar[str] = "AddColumn"
     table: str
     column: str
     type: str
@@ -134,7 +219,7 @@ class AddColumn:
 
     def to_ddl(self) -> str:
         parts = [
-            f"ALTER TABLE {_qualify(self.schema, self.table)} ADD COLUMN",
+            f"ALTER TABLE {qualify(self.schema, self.table)} ADD COLUMN",
             f'"{self.column}"',
             self.type,
         ]
@@ -144,8 +229,15 @@ class AddColumn:
             parts.append(f"DEFAULT {self.default}")
         return " ".join(parts)
 
+    def to_source(self, indent: str) -> str:
+        return (
+            f"{indent}AddColumn(table={_q(self.table)}, column={_q(self.column)}, "
+            f"type={_q(self.type)}, nullable={_q(self.nullable)}, "
+            f"default={_q(self.default)}, schema={_q(self.schema)}),"
+        )
+
     def apply(self, state: SchemaState) -> None:
-        t = _require_table(state, self.table)
+        t = require_table(state, self.table)
         if self.column in t.columns:
             raise SchemaError(
                 f"column {self.column!r} already exists on {self.table!r}"
@@ -159,24 +251,32 @@ class AddColumn:
 
 
 @dataclass
-class DropColumn:
+class DropColumn(_OpBase):
+    _import_name: ClassVar[str] = "DropColumn"
     table: str
     column: str
     schema: str | None = None
 
     def to_ddl(self) -> str:
         return (
-            f"ALTER TABLE {_qualify(self.schema, self.table)} "
+            f"ALTER TABLE {qualify(self.schema, self.table)} "
             f'DROP COLUMN "{self.column}"'
         )
 
+    def to_source(self, indent: str) -> str:
+        return (
+            f"{indent}DropColumn(table={_q(self.table)}, column={_q(self.column)}, "
+            f"schema={_q(self.schema)}),"
+        )
+
     def apply(self, state: SchemaState) -> None:
-        _require_column(state, self.table, self.column)
+        require_column(state, self.table, self.column)
         del state.tables[self.table].columns[self.column]
 
 
 @dataclass
-class RenameColumn:
+class RenameColumn(_OpBase):
+    _import_name: ClassVar[str] = "RenameColumn"
     table: str
     old_name: str
     new_name: str
@@ -184,12 +284,12 @@ class RenameColumn:
 
     def to_ddl(self) -> str:
         return (
-            f"ALTER TABLE {_qualify(self.schema, self.table)} "
+            f"ALTER TABLE {qualify(self.schema, self.table)} "
             f'RENAME COLUMN "{self.old_name}" TO "{self.new_name}"'
         )
 
     def apply(self, state: SchemaState) -> None:
-        t = _require_table(state, self.table)
+        t = require_table(state, self.table)
         if self.old_name not in t.columns:
             raise SchemaError(
                 f"column {self.old_name!r} does not exist on {self.table!r}"
@@ -207,9 +307,17 @@ class RenameColumn:
                 new_columns[name] = col
         t.columns = new_columns
 
+    def to_source(self, indent: str) -> str:
+        return (
+            f"{indent}RenameColumn(table={_q(self.table)}, "
+            f"old_name={_q(self.old_name)}, new_name={_q(self.new_name)}, "
+            f"schema={_q(self.schema)}),"
+        )
+
 
 @dataclass
-class AlterColumnType:
+class AlterColumnType(_OpBase):
+    _import_name: ClassVar[str] = "AlterColumnType"
     table: str
     column: str
     type: str
@@ -217,51 +325,72 @@ class AlterColumnType:
 
     def to_ddl(self) -> str:
         return (
-            f"ALTER TABLE {_qualify(self.schema, self.table)} "
+            f"ALTER TABLE {qualify(self.schema, self.table)} "
             f'ALTER COLUMN "{self.column}" TYPE {self.type}'
         )
 
+    def to_source(self, indent: str) -> str:
+        return (
+            f"{indent}AlterColumnType(table={_q(self.table)}, column={_q(self.column)}, "
+            f"type={_q(self.type)}, schema={_q(self.schema)}),"
+        )
+
     def apply(self, state: SchemaState) -> None:
-        col = _require_column(state, self.table, self.column)
+        col = require_column(state, self.table, self.column)
         col.type = self.type
 
 
 @dataclass
-class SetColumnNotNull:
+class SetColumnNotNull(_OpBase):
+    _import_name: ClassVar[str] = "SetColumnNotNull"
     table: str
     column: str
     schema: str | None = None
 
     def to_ddl(self) -> str:
         return (
-            f"ALTER TABLE {_qualify(self.schema, self.table)} "
+            f"ALTER TABLE {qualify(self.schema, self.table)} "
             f'ALTER COLUMN "{self.column}" SET NOT NULL'
         )
 
+    def to_source(self, indent: str) -> str:
+        return (
+            f"{indent}SetColumnNotNull(table={_q(self.table)}, column={_q(self.column)}, "
+            f"schema={_q(self.schema)}),"
+        )
+
     def apply(self, state: SchemaState) -> None:
-        col = _require_column(state, self.table, self.column)
+        col = require_column(state, self.table, self.column)
         col.nullable = False
 
 
 @dataclass
-class DropColumnNotNull:
+class DropColumnNotNull(_OpBase):
+    _import_name: ClassVar[str] = "DropColumnNotNull"
     table: str
     column: str
     schema: str | None = None
 
     def to_ddl(self) -> str:
         return (
-            f"ALTER TABLE {_qualify(self.schema, self.table)} "
+            f"ALTER TABLE {qualify(self.schema, self.table)} "
             f'ALTER COLUMN "{self.column}" DROP NOT NULL'
         )
 
+    def to_source(self, indent: str) -> str:
+        return (
+            f"{indent}DropColumnNotNull(table={_q(self.table)}, column={_q(self.column)}, "
+            f"schema={_q(self.schema)}),"
+        )
+
     def apply(self, state: SchemaState) -> None:
-        col = _require_column(state, self.table, self.column)
+        col = require_column(state, self.table, self.column)
         col.nullable = True
 
 
 @dataclass
-class SetColumnDefault:
+class SetColumnDefault(_OpBase):
+    _import_name: ClassVar[str] = "SetColumnDefault"
     table: str
     column: str
     default: str
@@ -269,72 +398,101 @@ class SetColumnDefault:
 
     def to_ddl(self) -> str:
         return (
-            f"ALTER TABLE {_qualify(self.schema, self.table)} "
+            f"ALTER TABLE {qualify(self.schema, self.table)} "
             f'ALTER COLUMN "{self.column}" SET DEFAULT {self.default}'
         )
 
+    def to_source(self, indent: str) -> str:
+        return (
+            f"{indent}SetColumnDefault(table={_q(self.table)}, column={_q(self.column)}, "
+            f"default={_q(self.default)}, schema={_q(self.schema)}),"
+        )
+
     def apply(self, state: SchemaState) -> None:
-        col = _require_column(state, self.table, self.column)
+        col = require_column(state, self.table, self.column)
         col.default = self.default
 
 
 @dataclass
-class DropColumnDefault:
+class DropColumnDefault(_OpBase):
+    _import_name: ClassVar[str] = "DropColumnDefault"
     table: str
     column: str
     schema: str | None = None
 
     def to_ddl(self) -> str:
         return (
-            f"ALTER TABLE {_qualify(self.schema, self.table)} "
+            f"ALTER TABLE {qualify(self.schema, self.table)} "
             f'ALTER COLUMN "{self.column}" DROP DEFAULT'
         )
 
+    def to_source(self, indent: str) -> str:
+        return (
+            f"{indent}DropColumnDefault(table={_q(self.table)}, column={_q(self.column)}, "
+            f"schema={_q(self.schema)}),"
+        )
+
     def apply(self, state: SchemaState) -> None:
-        col = _require_column(state, self.table, self.column)
+        col = require_column(state, self.table, self.column)
         col.default = None
 
 
-def _quote_cols(cols: tuple[str, ...]) -> str:
+def quote_cols(cols: tuple[str, ...]) -> str:
     return ", ".join(f'"{c}"' for c in cols)
 
 
-def _constraint_sql(constraint: ConstraintDict) -> str:
-    ctype = constraint["type"]
-    name = constraint["name"]
+def constraint_from_dict(d: ConstraintDict) -> Constraint:
+    """Convert a raw constraint dict (from migration files on disk) to a typed object."""
+    ctype = d["type"]
     if ctype == "unique":
-        cols = _quote_cols(tuple(constraint["columns"]))
-        return f'CONSTRAINT "{name}" UNIQUE ({cols})'
+        return UniqueConstraint(name=d["name"], columns=tuple(d["columns"]))
     if ctype == "foreign_key":
-        cols = _quote_cols(tuple(constraint["columns"]))
-        ref_schema = constraint.get("references_schema")
-        ref_table = constraint["references_table"]
-        ref_col = constraint["references_column"]
-        ref_qualified = _qualify(ref_schema, ref_table)
-        parts = [
-            f'CONSTRAINT "{name}" FOREIGN KEY ({cols}) '
-            f'REFERENCES {ref_qualified} ("{ref_col}")',
-        ]
-        on_delete = constraint.get("on_delete")
-        on_update = constraint.get("on_update")
-        if on_delete:
-            parts.append(f"ON DELETE {on_delete}")
-        if on_update:
-            parts.append(f"ON UPDATE {on_update}")
-        return " ".join(parts)
-    raise ValueError(f"unsupported constraint type: {ctype!r}")
+        return ForeignKeyConstraint(
+            name=d["name"],
+            columns=tuple(d["columns"]),
+            references_schema=d.get("references_schema"),
+            references_table=d["references_table"],
+            references_column=d["references_column"],
+            on_delete=d.get("on_delete"),
+            on_update=d.get("on_update"),
+        )
+    raise ValueError(f"unknown constraint type: {ctype!r}")
+
+
+def constraint_sql(constraint: Constraint) -> str:
+    if isinstance(constraint, UniqueConstraint):
+        cols = quote_cols(constraint.columns)
+        return f'CONSTRAINT "{constraint.name}" UNIQUE ({cols})'
+    # ForeignKeyConstraint — the only remaining member of the Constraint union.
+    cols = quote_cols(constraint.columns)
+    ref_qualified = qualify(constraint.references_schema, constraint.references_table)
+    parts = [
+        f'CONSTRAINT "{constraint.name}" FOREIGN KEY ({cols}) '
+        f'REFERENCES {ref_qualified} ("{constraint.references_column}")',
+    ]
+    if constraint.on_delete:
+        parts.append(f"ON DELETE {constraint.on_delete}")
+    if constraint.on_update:
+        parts.append(f"ON UPDATE {constraint.on_update}")
+    return " ".join(parts)
 
 
 @dataclass
-class AddConstraint:
+class AddConstraint(_OpBase):
+    _import_name: ClassVar[str] = "AddConstraint"
     table: str
-    constraint: ConstraintDict
+    constraint: ConstraintDict | Constraint
     schema: str | None = None
+
+    def _typed_constraint(self) -> Constraint:
+        if isinstance(self.constraint, (UniqueConstraint, ForeignKeyConstraint)):
+            return self.constraint
+        return constraint_from_dict(self.constraint)
 
     def to_ddl(self) -> str:
         body = (
-            f"ALTER TABLE {_qualify(self.schema, self.table)} "
-            f"ADD {_constraint_sql(self.constraint)};"
+            f"ALTER TABLE {qualify(self.schema, self.table)} "
+            f"ADD {constraint_sql(self._typed_constraint())};"
         )
         return (
             "DO $$ BEGIN "
@@ -342,30 +500,45 @@ class AddConstraint:
             "EXCEPTION WHEN duplicate_object THEN NULL; END $$"
         )
 
+    def to_source(self, indent: str) -> str:
+        return (
+            f"{indent}AddConstraint(table={_q(self.table)}, "
+            f"constraint={_format_constraint(self.constraint)}, "
+            f"schema={_q(self.schema)}),"
+        )
+
     def apply(self, state: SchemaState) -> None:
-        t = _require_table(state, self.table)
-        t.constraints.append(dict(self.constraint))
+        t = require_table(state, self.table)
+        t.constraints.append(self._typed_constraint())
 
 
 @dataclass
-class DropConstraint:
+class DropConstraint(_OpBase):
+    _import_name: ClassVar[str] = "DropConstraint"
     table: str
     name: str
     schema: str | None = None
 
     def to_ddl(self) -> str:
         return (
-            f"ALTER TABLE {_qualify(self.schema, self.table)} "
+            f"ALTER TABLE {qualify(self.schema, self.table)} "
             f'DROP CONSTRAINT IF EXISTS "{self.name}"'
         )
 
+    def to_source(self, indent: str) -> str:
+        return (
+            f"{indent}DropConstraint(table={_q(self.table)}, name={_q(self.name)}, "
+            f"schema={_q(self.schema)}),"
+        )
+
     def apply(self, state: SchemaState) -> None:
-        t = _require_table(state, self.table)
-        t.constraints = [c for c in t.constraints if c.get("name") != self.name]
+        t = require_table(state, self.table)
+        t.constraints = [c for c in t.constraints if c.name != self.name]
 
 
 @dataclass
-class CreateIndex:
+class CreateIndex(_OpBase):
+    _import_name: ClassVar[str] = "CreateIndex"
     table: str
     columns: tuple[str, ...]
     name: str
@@ -384,26 +557,36 @@ class CreateIndex:
         parts.append("IF NOT EXISTS")
         parts.append(f'"{self.name}"')
         parts.append("ON")
-        parts.append(_qualify(self.schema, self.table))
+        parts.append(qualify(self.schema, self.table))
         if self.method:
             parts.append(f"USING {self.method}")
-        parts.append(f"({_quote_cols(self.columns)})")
+        parts.append(f"({quote_cols(self.columns)})")
         return " ".join(parts)
 
+    def to_source(self, indent: str) -> str:
+        return (
+            f"{indent}CreateIndex(table={_q(self.table)}, "
+            f"columns={_format_columns_tuple(tuple(self.columns))}, "
+            f"name={_q(self.name)}, method={_q(self.method)}, "
+            f"unique={_q(self.unique)}, concurrent={_q(self.concurrent)}, "
+            f"schema={_q(self.schema)}),"
+        )
+
     def apply(self, state: SchemaState) -> None:
-        t = _require_table(state, self.table)
+        t = require_table(state, self.table)
         t.indexes.append(
-            {
-                "name": self.name,
-                "columns": tuple(self.columns),
-                "unique": self.unique,
-                "method": self.method,
-            }
+            IndexDef(
+                name=self.name,
+                columns=tuple(self.columns),
+                unique=self.unique,
+                method=self.method,
+            )
         )
 
 
 @dataclass
-class DropIndex:
+class DropIndex(_OpBase):
+    _import_name: ClassVar[str] = "DropIndex"
     name: str
     concurrent: bool = True
     schema: str | None = None
@@ -421,46 +604,65 @@ class DropIndex:
             parts.append(f'"{self.name}"')
         return " ".join(parts)
 
+    def to_source(self, indent: str) -> str:
+        return (
+            f"{indent}DropIndex(name={_q(self.name)}, concurrent={_q(self.concurrent)}, "
+            f"schema={_q(self.schema)}, table={_q(self.table)}),"
+        )
+
     def apply(self, state: SchemaState) -> None:
         for table in state.tables.values():
-            table.indexes = [i for i in table.indexes if i.get("name") != self.name]
+            table.indexes = [i for i in table.indexes if i.name != self.name]
 
 
 @dataclass
-class CreateExtension:
+class CreateExtension(_OpBase):
+    _import_name: ClassVar[str] = "CreateExtension"
     name: str
 
     def to_ddl(self) -> str:
         return f'CREATE EXTENSION IF NOT EXISTS "{self.name}"'
+
+    def to_source(self, indent: str) -> str:
+        return f"{indent}CreateExtension(name={_q(self.name)}),"
 
     def apply(self, state: SchemaState) -> None:
         state.extensions.add(self.name)
 
 
 @dataclass
-class DropExtension:
+class DropExtension(_OpBase):
+    _import_name: ClassVar[str] = "DropExtension"
     name: str
 
     def to_ddl(self) -> str:
         return f'DROP EXTENSION IF EXISTS "{self.name}"'
+
+    def to_source(self, indent: str) -> str:
+        return f"{indent}DropExtension(name={_q(self.name)}),"
 
     def apply(self, state: SchemaState) -> None:
         state.extensions.discard(self.name)
 
 
 @dataclass
-class CreateSchema:
+class CreateSchema(_OpBase):
+    _import_name: ClassVar[str] = "CreateSchema"
     name: str
 
     def to_ddl(self) -> str:
         return f'CREATE SCHEMA IF NOT EXISTS "{self.name}"'
+
+    def to_source(self, indent: str) -> str:
+        return f"{indent}CreateSchema(name={_q(self.name)}),"
 
     def apply(self, state: SchemaState) -> None:
         state.schemas.add(self.name)
 
 
 @dataclass
-class DropSchema:
+class DropSchema(_OpBase):
+    _import_name: ClassVar[str] = "DropSchema"
     name: str
     cascade: bool = False
 
@@ -470,12 +672,16 @@ class DropSchema:
             sql += " CASCADE"
         return sql
 
+    def to_source(self, indent: str) -> str:
+        return f"{indent}DropSchema(name={_q(self.name)}, cascade={_q(self.cascade)}),"
+
     def apply(self, state: SchemaState) -> None:
         state.schemas.discard(self.name)
 
 
 @dataclass
-class CreateView:
+class CreateView(_OpBase):
+    _import_name: ClassVar[str] = "CreateView"
     name: str
     definition: str
     schema: str | None = None
@@ -484,7 +690,15 @@ class CreateView:
 
     def to_ddl(self) -> str:
         head = "CREATE OR REPLACE VIEW" if self.replace else "CREATE VIEW"
-        return f"{head} {_qualify(self.schema, self.name)} AS {self.definition}"
+        return f"{head} {qualify(self.schema, self.name)} AS {self.definition}"
+
+    def to_source(self, indent: str) -> str:
+        return (
+            f"{indent}CreateView(name={_q(self.name)}, "
+            f"definition={_q(self.definition)}, schema={_q(self.schema)}, "
+            f"columns={_format_view_columns(tuple(self.columns))}, "
+            f"replace={_q(self.replace)}),"
+        )
 
     def apply(self, state: SchemaState) -> None:
         state.views[self.name] = ViewState(
@@ -495,7 +709,7 @@ class CreateView:
 
 
 @dataclass
-class RunSQL:
+class RunSQL(_OpBase):
     """Data-only escape hatch: execute raw SQL at apply time.
 
     `apply(state)` is a no-op — RunSQL never mutates the schema model.
@@ -503,15 +717,19 @@ class RunSQL:
     `reverse_sql`, if provided, is executed on rollback.
     """
 
+    _import_name: ClassVar[str] = "RunSQL"
     sql: str
     reverse_sql: str | None = None
+
+    def to_source(self, indent: str) -> str:  # noqa: ARG002
+        raise NotImplementedError("RunSQL/RunPython cannot be serialized to source")
 
     def apply(self, state: SchemaState) -> None:  # noqa: ARG002
         return None
 
 
 @dataclass
-class RunPython:
+class RunPython(_OpBase):
     """Data-only escape hatch: run an async Python function at apply time.
 
     `apply(state)` is a no-op. The runner awaits ``fn(conn)`` where ``conn``
@@ -519,24 +737,35 @@ class RunPython:
     awaited on rollback.
     """
 
+    _import_name: ClassVar[str] = "RunPython"
     fn: RunPythonFn
     reverse_fn: RunPythonFn | None = None
+
+    def to_source(self, indent: str) -> str:  # noqa: ARG002
+        raise NotImplementedError("RunSQL/RunPython cannot be serialized to source")
 
     def apply(self, state: SchemaState) -> None:  # noqa: ARG002
         return None
 
 
 @dataclass
-class DropView:
+class DropView(_OpBase):
+    _import_name: ClassVar[str] = "DropView"
     name: str
     schema: str | None = None
     cascade: bool = False
 
     def to_ddl(self) -> str:
-        sql = f"DROP VIEW IF EXISTS {_qualify(self.schema, self.name)}"
+        sql = f"DROP VIEW IF EXISTS {qualify(self.schema, self.name)}"
         if self.cascade:
             sql += " CASCADE"
         return sql
+
+    def to_source(self, indent: str) -> str:
+        return (
+            f"{indent}DropView(name={_q(self.name)}, schema={_q(self.schema)}, "
+            f"cascade={_q(self.cascade)}),"
+        )
 
     def apply(self, state: SchemaState) -> None:
         state.views.pop(self.name, None)

@@ -18,7 +18,7 @@ from norm.migrations.operations import (
     SetColumnDefault,
     SetColumnNotNull,
 )
-from norm.migrations.state import ColumnState, SchemaState, TableState
+from norm.migrations.state import ColumnState, ForeignKeyConstraint, SchemaState, TableState
 
 
 class TestDropTable:
@@ -58,7 +58,7 @@ class TestDiffStates:
             CreateTable(
                 table="users",
                 schema="public",
-                columns={"id": ColumnDef(type="BIGINT", nullable=False, primary_key=True)},
+                columns={"id": ColumnDef(type="BIGINT", nullable=False, primary_key=True, has_sequence_default=True)},
             )
         ]
         assert reverse == [DropTable(table="users", schema="public")]
@@ -299,24 +299,22 @@ class TestDiffForwardOrdering:
             columns={"id": ColumnState(type="BIGINT", nullable=False, primary_key=True)},
             schema="audit",
         )
+        fk = ForeignKeyConstraint(
+            name="child_parent_id_fk",
+            columns=("parent_id",),
+            references_schema="audit",
+            references_table="parent",
+            references_column="id",
+            on_delete=None,
+            on_update=None,
+        )
         child = TableState(
             columns={
                 "id": ColumnState(type="BIGINT", nullable=False, primary_key=True),
                 "parent_id": ColumnState(type="BIGINT", nullable=False),
             },
             schema="audit",
-            constraints=[
-                {
-                    "type": "foreign_key",
-                    "name": "child_parent_id_fk",
-                    "columns": ("parent_id",),
-                    "references_schema": "audit",
-                    "references_table": "parent",
-                    "references_column": "id",
-                    "on_delete": None,
-                    "on_update": None,
-                }
-            ],
+            constraints=[fk],
         )
         target.tables["parent"] = parent
         target.tables["child"] = child
@@ -341,18 +339,5 @@ class TestDiffForwardOrdering:
                 },
                 schema="audit",
             ),
-            AddConstraint(
-                table="child",
-                constraint={
-                    "type": "foreign_key",
-                    "name": "child_parent_id_fk",
-                    "columns": ("parent_id",),
-                    "references_schema": "audit",
-                    "references_table": "parent",
-                    "references_column": "id",
-                    "on_delete": None,
-                    "on_update": None,
-                },
-                schema="audit",
-            ),
+            AddConstraint(table="child", constraint=fk, schema="audit"),
         ]

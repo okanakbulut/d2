@@ -7,13 +7,10 @@ renamed columns surface as drop + add and the user hand-edits the migration
 file to use `RenameColumn`.
 """
 
-from __future__ import annotations
-
 from .operations import (
     AddColumn,
     AddConstraint,
     AlterColumnType,
-    ColumnDef,
     CreateExtension,
     CreateIndex,
     CreateSchema,
@@ -32,24 +29,14 @@ from .operations import (
     SetColumnDefault,
     SetColumnNotNull,
 )
-from .state import ColumnState, ConstraintDict, IndexDict, SchemaState, TableState, ViewState
+from .state import Constraint, ColumnState, IndexDef, SchemaState, TableState, ViewState
 
 
-def _column_def_from_state(col: ColumnState) -> ColumnDef:
-    return ColumnDef(
-        type=col.type,
-        nullable=col.nullable,
-        default=col.default,
-        primary_key=col.primary_key,
-    )
+def create_table_from_state(name: str, table: TableState) -> CreateTable:
+    return CreateTable(table=name, columns=dict(table.columns), schema=table.schema)
 
 
-def _create_table_from_state(name: str, table: TableState) -> CreateTable:
-    cols = {n: _column_def_from_state(c) for n, c in table.columns.items()}
-    return CreateTable(table=name, columns=cols, schema=table.schema)
-
-
-def _diff_columns(
+def diff_columns(
     table_name: str,
     schema: str | None,
     current_cols: dict[str, ColumnState],
@@ -198,18 +185,18 @@ def diff_states(
 
     for name in sorted(target_tables - current_tables):
         table = target.tables[name]
-        forward.append(_create_table_from_state(name, table))
+        forward.append(create_table_from_state(name, table))
         reverse.append(DropTable(table=name, schema=table.schema))
         for c in table.constraints:
             add = AddConstraint(
-                table=name, constraint=dict(c), schema=table.schema,
+                table=name, constraint=c, schema=table.schema,
             )
-            if c.get("type") == "foreign_key":
+            if c.type == "foreign_key":
                 deferred_fk_adds.append(add)
             else:
                 forward.append(add)
         for idx in table.indexes:
-            forward.append(_create_index_from_state(name, table.schema, idx))
+            forward.append(create_index_from_state(name, table.schema, idx))
         # DropTable in reverse removes everything; no separate cleanup needed.
 
     forward.extend(deferred_fk_adds)
@@ -217,31 +204,31 @@ def diff_states(
     for name in sorted(current_tables - target_tables):
         table = current.tables[name]
         forward.append(DropTable(table=name, schema=table.schema))
-        rev_create = _create_table_from_state(name, table)
+        rev_create = create_table_from_state(name, table)
         reverse.append(rev_create)
         for c in table.constraints:
             reverse.append(
-                AddConstraint(table=name, constraint=dict(c), schema=table.schema)
+                AddConstraint(table=name, constraint=c, schema=table.schema)
             )
         for idx in table.indexes:
-            reverse.append(_create_index_from_state(name, table.schema, idx))
+            reverse.append(create_index_from_state(name, table.schema, idx))
 
-    view_fwd, view_rev = _diff_views(current.views, target.views)
+    view_fwd, view_rev = diff_views(current.views, target.views)
 
     for name in sorted(current_tables & target_tables):
         cur_t = current.tables[name]
         tgt_t = target.tables[name]
-        col_fwd, col_rev = _diff_columns(
+        col_fwd, col_rev = diff_columns(
             name, tgt_t.schema, cur_t.columns, tgt_t.columns
         )
         forward.extend(col_fwd)
         reverse.extend(col_rev)
-        cons_fwd, cons_rev = _diff_constraints(
+        cons_fwd, cons_rev = diff_constraints(
             name, tgt_t.schema, cur_t.constraints, tgt_t.constraints
         )
         forward.extend(cons_fwd)
         reverse.extend(cons_rev)
-        idx_fwd, idx_rev = _diff_indexes(
+        idx_fwd, idx_rev = diff_indexes(
             name, tgt_t.schema, cur_t.indexes, tgt_t.indexes
         )
         forward.extend(idx_fwd)
@@ -253,7 +240,7 @@ def diff_states(
     return forward, reverse
 
 
-def _create_view_from_state(name: str, view: ViewState) -> CreateView:
+def create_view_from_state(name: str, view: ViewState) -> CreateView:
     return CreateView(
         name=name,
         definition=view.definition,
@@ -263,7 +250,7 @@ def _create_view_from_state(name: str, view: ViewState) -> CreateView:
     )
 
 
-def _diff_views(
+def diff_views(
     current: dict[str, ViewState], target: dict[str, ViewState]
 ) -> tuple[list[Operation], list[Operation]]:
     forward: list[Operation] = []
@@ -271,13 +258,13 @@ def _diff_views(
 
     for name in sorted(set(target) - set(current)):
         v = target[name]
-        forward.append(_create_view_from_state(name, v))
+        forward.append(create_view_from_state(name, v))
         reverse.append(DropView(name=name, schema=v.schema))
 
     for name in sorted(set(current) - set(target)):
         v = current[name]
         forward.append(DropView(name=name, schema=v.schema))
-        reverse.append(_create_view_from_state(name, v))
+        reverse.append(create_view_from_state(name, v))
 
     for name in sorted(set(current) & set(target)):
         cur = current[name]
@@ -287,63 +274,63 @@ def _diff_views(
         if cur.columns != tgt.columns:
             # Column list reshape — must DROP + CREATE.
             forward.append(DropView(name=name, schema=tgt.schema))
-            forward.append(_create_view_from_state(name, tgt))
+            forward.append(create_view_from_state(name, tgt))
             reverse.append(DropView(name=name, schema=cur.schema))
-            reverse.append(_create_view_from_state(name, cur))
+            reverse.append(create_view_from_state(name, cur))
         else:
             # Definition only — CREATE OR REPLACE.
-            forward.append(_create_view_from_state(name, tgt))
-            reverse.append(_create_view_from_state(name, cur))
+            forward.append(create_view_from_state(name, tgt))
+            reverse.append(create_view_from_state(name, cur))
 
     return forward, reverse
 
 
-def _diff_constraints(
+def diff_constraints(
     table: str,
     schema: str | None,
-    current: list[ConstraintDict],
-    target: list[ConstraintDict],
+    current: list[Constraint],
+    target: list[Constraint],
 ) -> tuple[list[Operation], list[Operation]]:
     forward: list[Operation] = []
     reverse: list[Operation] = []
-    cur_by_name = {c["name"]: c for c in current}
-    tgt_by_name = {c["name"]: c for c in target}
+    cur_by_name = {c.name: c for c in current}
+    tgt_by_name = {c.name: c for c in target}
     for name, c in tgt_by_name.items():
         if name not in cur_by_name:
-            forward.append(AddConstraint(table=table, constraint=dict(c), schema=schema))
+            forward.append(AddConstraint(table=table, constraint=c, schema=schema))
             reverse.append(DropConstraint(table=table, name=name, schema=schema))
     for name, c in cur_by_name.items():
         if name not in tgt_by_name:
             forward.append(DropConstraint(table=table, name=name, schema=schema))
-            reverse.append(AddConstraint(table=table, constraint=dict(c), schema=schema))
+            reverse.append(AddConstraint(table=table, constraint=c, schema=schema))
     return forward, reverse
 
 
-def _create_index_from_state(table: str, schema: str | None, idx: IndexDict) -> CreateIndex:
+def create_index_from_state(table: str, schema: str | None, idx: IndexDef) -> CreateIndex:
     return CreateIndex(
         table=table,
-        columns=tuple(idx["columns"]),
-        name=idx["name"],
-        method=idx.get("method"),
-        unique=idx.get("unique", False),
+        columns=idx.columns,
+        name=idx.name,
+        method=idx.method,
+        unique=idx.unique,
         concurrent=True,
         schema=schema,
     )
 
 
-def _diff_indexes(
+def diff_indexes(
     table: str,
     schema: str | None,
-    current: list[IndexDict],
-    target: list[IndexDict],
+    current: list[IndexDef],
+    target: list[IndexDef],
 ) -> tuple[list[Operation], list[Operation]]:
     forward: list[Operation] = []
     reverse: list[Operation] = []
-    cur_by_name = {i["name"]: i for i in current}
-    tgt_by_name = {i["name"]: i for i in target}
+    cur_by_name = {i.name: i for i in current}
+    tgt_by_name = {i.name: i for i in target}
     for name, i in tgt_by_name.items():
         if name not in cur_by_name:
-            forward.append(_create_index_from_state(table, schema, i))
+            forward.append(create_index_from_state(table, schema, i))
             reverse.append(
                 DropIndex(name=name, concurrent=True, schema=schema, table=table)
             )
@@ -352,5 +339,5 @@ def _diff_indexes(
             forward.append(
                 DropIndex(name=name, concurrent=True, schema=schema, table=table)
             )
-            reverse.append(_create_index_from_state(table, schema, i))
+            reverse.append(create_index_from_state(table, schema, i))
     return forward, reverse

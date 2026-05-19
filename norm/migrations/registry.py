@@ -6,9 +6,6 @@ that hit the `_setup_table` path register (i.e. those without a pre-supplied
 short-circuit before reaching the registry.
 """
 
-from __future__ import annotations
-
-
 MODEL_REGISTRY: dict[str, type] = {}
 
 

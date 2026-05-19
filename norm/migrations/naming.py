@@ -4,9 +4,6 @@ Postgres truncates identifiers > 63 chars; we refuse silently-truncated names
 and tell the user to pass an explicit `name=`.
 """
 
-from __future__ import annotations
-
-
 PG_IDENTIFIER_LIMIT = 63
 
 

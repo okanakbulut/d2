@@ -1,12 +1,11 @@
 """Unit tests for foreign keys (issue 144)."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import pytest
 
 from norm.migrations.snapshot import models_to_schema_state
+from norm.migrations.state import ForeignKeyConstraint
 from norm.model import ForeignKey, TableMeta, field
 from norm.schema import Field, PrimaryKey, Table
 
@@ -64,61 +63,57 @@ class TestSnapshotForeignKeys:
     def test_inline_fk_with_field_proxy_target_produces_constraint(self):
         state = models_to_schema_state([FkOrg, FkUser])
         assert state.tables["fk_user"].constraints == [
-            {
-                "type": "foreign_key",
-                "name": "fk_user_org_id_fkey",
-                "columns": ("org_id",),
-                "references_schema": None,
-                "references_table": "fk_org",
-                "references_column": "id",
-                "on_delete": "CASCADE",
-                "on_update": None,
-            }
+            ForeignKeyConstraint(
+                name="fk_user_org_id_fkey",
+                columns=("org_id",),
+                references_schema=None,
+                references_table="fk_org",
+                references_column="id",
+                on_delete="CASCADE",
+                on_update=None,
+            )
         ]
 
     def test_inline_fk_with_qualified_string_target(self):
         state = models_to_schema_state([FkPost])
         assert state.tables["fk_post"].constraints == [
-            {
-                "type": "foreign_key",
-                "name": "fk_post_author_id_fkey",
-                "columns": ("author_id",),
-                "references_schema": "public",
-                "references_table": "fk_user",
-                "references_column": "id",
-                "on_delete": "SET NULL",
-                "on_update": "CASCADE",
-            }
+            ForeignKeyConstraint(
+                name="fk_post_author_id_fkey",
+                columns=("author_id",),
+                references_schema="public",
+                references_table="fk_user",
+                references_column="id",
+                on_delete="SET NULL",
+                on_update="CASCADE",
+            )
         ]
 
     def test_table_meta_fk_produces_same_constraint_as_inline(self):
         state = models_to_schema_state([FkMember])
         assert state.tables["fk_member"].constraints == [
-            {
-                "type": "foreign_key",
-                "name": "fk_member_org_id_fkey",
-                "columns": ("org_id",),
-                "references_schema": None,
-                "references_table": "fk_org",
-                "references_column": "id",
-                "on_delete": "CASCADE",
-                "on_update": None,
-            }
+            ForeignKeyConstraint(
+                name="fk_member_org_id_fkey",
+                columns=("org_id",),
+                references_schema=None,
+                references_table="fk_org",
+                references_column="id",
+                on_delete="CASCADE",
+                on_update=None,
+            )
         ]
 
     def test_inline_fk_with_bare_string_target(self):
         state = models_to_schema_state([FkAuthor])
         assert state.tables["fk_author"].constraints == [
-            {
-                "type": "foreign_key",
-                "name": "fk_author_org_id_fkey",
-                "columns": ("org_id",),
-                "references_schema": None,
-                "references_table": "fk_org",
-                "references_column": "id",
-                "on_delete": None,
-                "on_update": None,
-            }
+            ForeignKeyConstraint(
+                name="fk_author_org_id_fkey",
+                columns=("org_id",),
+                references_schema=None,
+                references_table="fk_org",
+                references_column="id",
+                on_delete=None,
+                on_update=None,
+            )
         ]
 
 
@@ -251,6 +246,7 @@ class TestDiffForeignKeyDeferredOrdering:
         )
         from norm.migrations.state import (
             ColumnState,
+            ForeignKeyConstraint,
             SchemaState,
             TableState,
         )
@@ -261,23 +257,22 @@ class TestDiffForeignKeyDeferredOrdering:
             columns={"id": ColumnState(type="BIGINT", nullable=False, primary_key=True)},
             schema="public",
         )
-        fk = {
-            "type": "foreign_key",
-            "name": "fk_user_org_id_fkey",
-            "columns": ("org_id",),
-            "references_schema": "public",
-            "references_table": "fk_org",
-            "references_column": "id",
-            "on_delete": "CASCADE",
-            "on_update": None,
-        }
+        fk = ForeignKeyConstraint(
+            name="fk_user_org_id_fkey",
+            columns=("org_id",),
+            references_schema="public",
+            references_table="fk_org",
+            references_column="id",
+            on_delete="CASCADE",
+            on_update=None,
+        )
         target.tables["fk_user"] = TableState(
             columns={
                 "id": ColumnState(type="BIGINT", nullable=False, primary_key=True),
                 "org_id": ColumnState(type="BIGINT", nullable=False),
             },
             schema="public",
-            constraints=[dict(fk)],
+            constraints=[fk],
         )
 
         forward, reverse = diff_states(current, target)
@@ -297,7 +292,7 @@ class TestDiffForeignKeyDeferredOrdering:
                 },
                 schema="public",
             ),
-            AddConstraint(table="fk_user", constraint=dict(fk), schema="public"),
+            AddConstraint(table="fk_user", constraint=fk, schema="public"),
         ]
         assert reverse == [
             DropTable(table="fk_org", schema="public"),
@@ -315,32 +310,33 @@ class TestDiffForeignKeyDeferredOrdering:
         )
         from norm.migrations.state import (
             ColumnState,
+            ForeignKeyConstraint,
             SchemaState,
             TableState,
+            UniqueConstraint,
         )
 
         current = SchemaState()
         target = SchemaState()
         # 'a_tbl' has a unique constraint (non-FK — should stay attached)
-        unique = {"type": "unique", "name": "a_tbl_x_key", "columns": ("x",)}
+        unique = UniqueConstraint(name="a_tbl_x_key", columns=("x",))
         # 'a_tbl' also has a FK
-        fk_a = {
-            "type": "foreign_key",
-            "name": "a_tbl_y_fkey",
-            "columns": ("y",),
-            "references_schema": "public",
-            "references_table": "z_tbl",
-            "references_column": "id",
-            "on_delete": None,
-            "on_update": None,
-        }
+        fk_a = ForeignKeyConstraint(
+            name="a_tbl_y_fkey",
+            columns=("y",),
+            references_schema="public",
+            references_table="z_tbl",
+            references_column="id",
+            on_delete=None,
+            on_update=None,
+        )
         target.tables["a_tbl"] = TableState(
             columns={
                 "x": ColumnState(type="TEXT", nullable=False),
                 "y": ColumnState(type="BIGINT", nullable=False),
             },
             schema="public",
-            constraints=[dict(unique), dict(fk_a)],
+            constraints=[unique, fk_a],
         )
         target.tables["z_tbl"] = TableState(
             columns={"id": ColumnState(type="BIGINT", nullable=False, primary_key=True)},
@@ -357,7 +353,7 @@ class TestDiffForeignKeyDeferredOrdering:
                 },
                 schema="public",
             ),
-            AddConstraint(table="a_tbl", constraint=dict(unique), schema="public"),
+            AddConstraint(table="a_tbl", constraint=unique, schema="public"),
             CreateTable(
                 table="z_tbl",
                 columns={
@@ -365,7 +361,7 @@ class TestDiffForeignKeyDeferredOrdering:
                 },
                 schema="public",
             ),
-            AddConstraint(table="a_tbl", constraint=dict(fk_a), schema="public"),
+            AddConstraint(table="a_tbl", constraint=fk_a, schema="public"),
         ]
         assert reverse == [
             DropTable(table="a_tbl", schema="public"),
@@ -377,20 +373,20 @@ class TestDiffForeignKeyDeferredOrdering:
         from norm.migrations.operations import AddConstraint, DropConstraint
         from norm.migrations.state import (
             ColumnState,
+            ForeignKeyConstraint,
             SchemaState,
             TableState,
         )
 
-        fk = {
-            "type": "foreign_key",
-            "name": "u_org_id_fkey",
-            "columns": ("org_id",),
-            "references_schema": "public",
-            "references_table": "orgs",
-            "references_column": "id",
-            "on_delete": "CASCADE",
-            "on_update": None,
-        }
+        fk = ForeignKeyConstraint(
+            name="u_org_id_fkey",
+            columns=("org_id",),
+            references_schema="public",
+            references_table="orgs",
+            references_column="id",
+            on_delete="CASCADE",
+            on_update=None,
+        )
         current = SchemaState()
         current.tables["u"] = TableState(
             columns={"org_id": ColumnState(type="BIGINT", nullable=False)},
@@ -400,12 +396,12 @@ class TestDiffForeignKeyDeferredOrdering:
         target.tables["u"] = TableState(
             columns={"org_id": ColumnState(type="BIGINT", nullable=False)},
             schema="public",
-            constraints=[dict(fk)],
+            constraints=[fk],
         )
 
         forward, reverse = diff_states(current, target)
         assert forward == [
-            AddConstraint(table="u", constraint=dict(fk), schema="public"),
+            AddConstraint(table="u", constraint=fk, schema="public"),
         ]
         assert reverse == [
             DropConstraint(table="u", name="u_org_id_fkey", schema="public"),

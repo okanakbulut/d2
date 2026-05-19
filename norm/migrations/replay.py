@@ -10,7 +10,7 @@ from . import Migration
 from .state import SchemaState
 
 
-def _load_migration(path: Path) -> type[Migration]:
+def load_migration(path: Path) -> type[Migration]:
     """Import a migration file by path and return its `Migration` subclass.
 
     Looks for a class named `Migration` in the loaded module that is a strict
@@ -42,7 +42,11 @@ def replay_migrations(paths: Iterable[Path]) -> SchemaState:
     """
     state = SchemaState()
     for path in sorted(paths, key=lambda p: p.name):
-        mig_cls = _load_migration(path)
+        mig_cls = load_migration(path)
         for op in mig_cls.operations:
             op.apply(state)
     return state
+
+
+# Backwards-compatible alias for the renamed loader.
+_load_migration = load_migration

@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from norm.migrations import Migration
-from norm.migrations.replay import _load_migration
+from norm.migrations.replay import load_migration
 
 
 MIGRATION_SOURCE = '''
@@ -30,7 +30,7 @@ class TestLoadMigration:
         path = tmp_path / "0001_initial.py"
         path.write_text(MIGRATION_SOURCE)
 
-        cls = _load_migration(path)
+        cls = load_migration(path)
 
         assert issubclass(cls, Migration)
         assert cls.name == "0001_initial"
@@ -40,7 +40,7 @@ class TestLoadMigration:
         path = tmp_path / "0002_empty.py"
         path.write_text("x = 1\n")
         with pytest.raises(Exception):
-            _load_migration(path)
+            load_migration(path)
 
 
 REPLAY_0001 = '''

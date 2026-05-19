@@ -84,7 +84,7 @@ class TestDiffStates:
         ]
 
 
-def _state_with(table_name: str, columns: dict, schema: str | None = "public") -> SchemaState:
+def _state_with(table_name: str, columns: dict[str, ColumnState], schema: str | None = "public") -> SchemaState:
     state = SchemaState()
     state.tables[table_name] = TableState(columns=dict(columns), schema=schema)
     return state

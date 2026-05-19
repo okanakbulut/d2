@@ -9,14 +9,20 @@ short-circuit before reaching the registry.
 from __future__ import annotations
 
 
-_MODEL_REGISTRY: dict[str, type] = {}
+MODEL_REGISTRY: dict[str, type] = {}
 
 
-def _register(cls: type) -> None:
+def register(cls: type) -> None:
+    """Register a model class under ``f"{module}.{qualname}"``."""
     key = f"{cls.__module__}.{cls.__qualname__}"
-    _MODEL_REGISTRY[key] = cls
+    MODEL_REGISTRY[key] = cls
 
 
 def collect_models() -> list[type]:
     """Return all registered models in insertion order."""
-    return list(_MODEL_REGISTRY.values())
+    return list(MODEL_REGISTRY.values())
+
+
+# Backwards-compatible aliases — kept so external imports keep working.
+_MODEL_REGISTRY = MODEL_REGISTRY
+_register = register

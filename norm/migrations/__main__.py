@@ -8,13 +8,16 @@ import importlib
 import pkgutil
 import sys
 from pathlib import Path
+from typing import Any
 
 from .codegen import make_migration
 from .config import NormConfig, load_config
 from .draft import diff_states
-from .registry import _MODEL_REGISTRY
+from .operations import Operation
+from .registry import MODEL_REGISTRY
 from .replay import replay_migrations
 from .snapshot import models_to_schema_state
+from .state import SchemaState
 
 
 def _import_models_module(dotted: str) -> None:
@@ -37,17 +40,17 @@ def _models_for(cfg: NormConfig) -> list[type]:
     # Drop any prior registrations under this prefix so a reload reflects the
     # current source-of-truth (important for tests and the long-lived CLI).
     stale = [
-        key for key, cls in _MODEL_REGISTRY.items()
+        key for key, cls in MODEL_REGISTRY.items()
         if cls.__module__ == prefix or cls.__module__.startswith(prefix + ".")
     ]
     for key in stale:
-        del _MODEL_REGISTRY[key]
+        del MODEL_REGISTRY[key]
 
     _import_models_module(prefix)
 
     return [
         cls
-        for cls in _MODEL_REGISTRY.values()
+        for cls in MODEL_REGISTRY.values()
         if cls.__module__ == prefix or cls.__module__.startswith(prefix + ".")
     ]
 
@@ -68,7 +71,9 @@ def _next_number(migrations_dir: Path) -> int:
     return highest + 1
 
 
-def _compute_diff(cfg: NormConfig):
+def _compute_diff(
+    cfg: NormConfig,
+) -> tuple[tuple[list["Operation"], list["Operation"]], "SchemaState"]:
     cfg.migrations_dir.mkdir(parents=True, exist_ok=True)
     current = replay_migrations(_existing_migration_files(cfg.migrations_dir))
     target = models_to_schema_state(_models_for(cfg))
@@ -124,11 +129,11 @@ def cmd_check(*, cwd: Path, migrations_dir: str | None = None, models: str | Non
 
 def _check_atomic_mismatch(cfg: NormConfig) -> list[tuple[Path, str]]:
     from .operations import CreateIndex, DropIndex
-    from .replay import _load_migration
+    from .replay import load_migration
 
     warnings: list[tuple[Path, str]] = []
     for path in _existing_migration_files(cfg.migrations_dir):
-        mig_cls = _load_migration(path)
+        mig_cls = load_migration(path)
         if not mig_cls.atomic:
             continue
         has_non_tx = any(
@@ -197,11 +202,11 @@ def _run_sql_contains_ddl(sql: str) -> str | None:
 
 def _check_run_sql_ddl(cfg: NormConfig) -> list[tuple[Path, str]]:
     from .operations import RunSQL
-    from .replay import _load_migration
+    from .replay import load_migration
 
     warnings: list[tuple[Path, str]] = []
     for path in _existing_migration_files(cfg.migrations_dir):
-        mig_cls = _load_migration(path)
+        mig_cls = load_migration(path)
         for op in list(mig_cls.operations) + list(mig_cls.reverse_operations or []):
             if not isinstance(op, RunSQL):
                 continue
@@ -226,7 +231,8 @@ async def cmd_apply(*, cwd: Path, dsn: str, migrations_dir: str | None = None, m
     from .runner import MigrationRunner
 
     cfg = load_config(cwd, migrations_dir_override=migrations_dir, models_override=models)
-    raw = await asyncpg.connect(dsn)
+    asyncpg_any: Any = asyncpg
+    raw: Any = await asyncpg_any.connect(dsn)
     try:
         runner = MigrationRunner(conn=AsyncConnection(raw), migrations_dir=str(cfg.migrations_dir))
         applied = await runner.apply()
@@ -254,7 +260,8 @@ async def cmd_rollback(
     from .runner import MigrationRunner
 
     cfg = load_config(cwd, migrations_dir_override=migrations_dir, models_override=models)
-    raw = await asyncpg.connect(dsn)
+    asyncpg_any: Any = asyncpg
+    raw: Any = await asyncpg_any.connect(dsn)
     try:
         runner = MigrationRunner(conn=AsyncConnection(raw), migrations_dir=str(cfg.migrations_dir))
         await runner.rollback(name, force=force)

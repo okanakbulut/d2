@@ -8,12 +8,14 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast, get_origin
 from uuid import UUID
+
+import pypika
 
 from .naming import auto_fk_name, auto_index_name, auto_unique_name
 from .operations import ColumnDef, CreateTable
-from .state import SchemaState, ViewState
+from .state import ConstraintDict, SchemaState, ViewState
 
 
 # Python type → SQL type. `int` maps to BIGINT by default; the BIGSERIAL upgrade
@@ -33,9 +35,12 @@ _PY_TO_SQL: dict[type, str] = {
 }
 
 
-def _sql_type_for(python_type: type) -> str:
-    if python_type in _PY_TO_SQL:
-        return _PY_TO_SQL[python_type]
+def _sql_type_for(python_type: Any) -> str:
+    # Generic aliases like `dict[str, Any]` aren't hashable into our type-keyed
+    # table directly; strip to the origin (`dict`) for lookup.
+    lookup = get_origin(python_type) or python_type
+    if lookup in _PY_TO_SQL:
+        return _PY_TO_SQL[lookup]
     raise TypeError(f"no SQL mapping for Python type {python_type!r}")
 
 
@@ -61,11 +66,13 @@ def _resolve_fk_target(target: Any) -> tuple[str | None, str, str]:
 
     if isinstance(target, Field):
         pika_field = target.pika_field
-        pika_table = pika_field.table
-        ref_table = pika_table.get_table_name()
-        schema_obj = getattr(pika_table, "_schema", None)
-        ref_schema = (
-            schema_obj.get_sql(quote_char='"').strip('"') if schema_obj else None
+        pika_table = cast(pypika.Table, pika_field.table)
+        ref_table: str = pika_table.get_table_name()
+        schema_obj: Any = getattr(pika_table, "_schema", None)
+        ref_schema: str | None = (
+            cast(str, schema_obj.get_sql(quote_char='"')).strip('"')
+            if schema_obj
+            else None
         )
         return ref_schema, ref_table, target.column_name
 
@@ -90,7 +97,7 @@ def _fk_constraint_dict(
     table: str,
     fk: Any,
     columns: tuple[str, ...] | None = None,
-) -> dict:
+) -> ConstraintDict:
     ref_schema, ref_table, ref_column = _resolve_fk_target(fk.to)
     cols = columns if columns is not None else fk.columns
     if cols is None:
@@ -138,21 +145,26 @@ def _sql_literal(value: Any) -> str:
     )
 
 
-def _snapshot_view(cls: Any, state: SchemaState) -> None:
-    query = getattr(cls, "__view_query__", None)
+def _snapshot_view(cls: type, state: SchemaState) -> None:
+    query: Any = getattr(cls, "__view_query__", None)
     if query is None:
         return
-    view_name = cls.__table__.get_table_name()
-    schema_obj = getattr(cls.__table__, "_schema", None)
-    schema_str = schema_obj.get_sql(quote_char='"').strip('"') if schema_obj else None
-    raw_sql, params = query.build()
+    pika_table = cast(pypika.Table, getattr(cls, "__table__"))
+    view_name: str = pika_table.get_table_name()
+    schema_obj: Any = getattr(pika_table, "_schema", None)
+    schema_str: str | None = (
+        cast(str, schema_obj.get_sql(quote_char='"')).strip('"')
+        if schema_obj
+        else None
+    )
+    raw_sql, params = cast(tuple[str, tuple[Any, ...]], query.build())
     definition = _inline_view_params(raw_sql, params)
-    columns: tuple[tuple[str, type], ...] = tuple(
+    columns: tuple[tuple[str, type[Any]], ...] = tuple(
         (
-            getattr(c.pika_field, "alias", None) or c.column_name,
-            c.python_type,
+            cast(str, getattr(c.pika_field, "alias", None) or c.column_name),
+            cast("type[Any]", c.python_type),
         )
-        for c in query.__columns__
+        for c in cast(tuple[Any, ...], query.__columns__)
     )
     state.views[view_name] = ViewState(
         definition=definition,
@@ -169,20 +181,24 @@ def models_to_schema_state(models: list[type]) -> SchemaState:
     schemas) is empty.
     """
     from norm.schema import Table, View  # local import to avoid cycles
+    from .state import IndexDict
 
     state = SchemaState()
     for cls in models:
-        if isinstance(cls, type) and issubclass(cls, View) and not issubclass(cls, Table):
+        if issubclass(cls, View) and not issubclass(cls, Table):
             _snapshot_view(cls, state)
             continue
-        if not (isinstance(cls, type) and issubclass(cls, Table)):
+        if not issubclass(cls, Table):
             continue
         columns: dict[str, ColumnDef] = {}
         for f in cls.__fields__:
             columns[f.column_name] = _column_def_for_field(f)
-        table_name = cls.__table__.get_table_name()
-        schema_name = getattr(cls.__table__, "_schema", None)
-        schema_str = schema_name.get_sql(quote_char='"') if schema_name else None
+        pika_table = cls.__table__
+        table_name: str = pika_table.get_table_name()
+        schema_name: Any = getattr(pika_table, "_schema", None)
+        schema_str: str | None = (
+            cast(str, schema_name.get_sql(quote_char='"')) if schema_name else None
+        )
         if schema_str:
             schema_str = schema_str.strip('"')
         CreateTable(table=table_name, columns=columns, schema=schema_str).apply(state)
@@ -192,22 +208,20 @@ def models_to_schema_state(models: list[type]) -> SchemaState:
             fd = f.field_def
             col = f.column_name
             if fd.unique:
-                table_state.constraints.append(
-                    {
-                        "type": "unique",
-                        "name": auto_unique_name(table_name, (col,)),
-                        "columns": (col,),
-                    }
-                )
+                unique_constraint: ConstraintDict = {
+                    "type": "unique",
+                    "name": auto_unique_name(table_name, (col,)),
+                    "columns": (col,),
+                }
+                table_state.constraints.append(unique_constraint)
             if fd.index:
-                table_state.indexes.append(
-                    {
-                        "name": auto_index_name(table_name, (col,)),
-                        "columns": (col,),
-                        "unique": False,
-                        "method": None,
-                    }
-                )
+                index_entry: IndexDict = {
+                    "name": auto_index_name(table_name, (col,)),
+                    "columns": (col,),
+                    "unique": False,
+                    "method": None,
+                }
+                table_state.indexes.append(index_entry)
             if fd.fk is not None:
                 table_state.constraints.append(
                     _fk_constraint_dict(
@@ -215,7 +229,7 @@ def models_to_schema_state(models: list[type]) -> SchemaState:
                     )
                 )
 
-        meta = getattr(cls, "__meta__", None)
+        meta: Any = getattr(cls, "__meta__", None)
         if meta is not None:
             for ext in getattr(meta, "extensions", ()) or ():
                 state.extensions.add(ext)
@@ -227,18 +241,17 @@ def models_to_schema_state(models: list[type]) -> SchemaState:
                     _fk_constraint_dict(table=table_name, fk=fk)
                 )
             for idx in getattr(meta, "indexes", ()) or ():
-                cols = tuple(idx.columns)
-                idx_name = idx.name or (
+                cols: tuple[str, ...] = tuple(idx.columns)
+                idx_name: str = idx.name or (
                     auto_unique_name(table_name, cols)
                     if idx.unique
                     else auto_index_name(table_name, cols)
                 )
-                table_state.indexes.append(
-                    {
-                        "name": idx_name,
-                        "columns": cols,
-                        "unique": idx.unique,
-                        "method": idx.method,
-                    }
-                )
+                meta_idx_entry: IndexDict = {
+                    "name": idx_name,
+                    "columns": cols,
+                    "unique": idx.unique,
+                    "method": idx.method,
+                }
+                table_state.indexes.append(meta_idx_entry)
     return state

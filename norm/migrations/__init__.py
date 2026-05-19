@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
+
+if TYPE_CHECKING:
+    from .operations import Operation
 
 
 class Migration:
@@ -13,8 +16,8 @@ class Migration:
     """
 
     name: ClassVar[str] = ""
-    operations: ClassVar[list] = []
-    reverse_operations: ClassVar[list | None] = None
+    operations: ClassVar[list["Operation"]] = []
+    reverse_operations: ClassVar[list["Operation"] | None] = None
     dependencies: ClassVar[list[str]] = []
     atomic: ClassVar[bool] = True
 

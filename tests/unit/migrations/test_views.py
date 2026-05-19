@@ -1,7 +1,5 @@
 """Unit tests for View migration operations + diff (issue 145)."""
 
-import pytest
-
 from norm.migrations.operations import CreateView, DropView
 from norm.migrations.state import SchemaState, ViewState
 

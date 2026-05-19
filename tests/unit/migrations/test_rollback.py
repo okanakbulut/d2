@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import ClassVar, cast
 
 import pytest
 
+from norm.connection import AsyncConnection
 from norm.migrations import Migration
-from norm.migrations.operations import CreateTable, ColumnDef, DropTable
+from norm.migrations.operations import ColumnDef, CreateTable, DropTable, Operation
 from norm.migrations.runner import MigrationRunner
 
 
@@ -22,14 +24,14 @@ _CREATE_TRACKING_SQL = (
 
 class _StubRaw:
     def __init__(self, applied: list[str] | None = None) -> None:
-        self.executed: list[tuple[str, tuple]] = []
+        self.executed: list[tuple[str, tuple[object, ...]]] = []
         self._applied = applied or []
         self.txn_entered = 0
 
     async def execute(self, sql: str, *args: object) -> None:
         self.executed.append((sql, args))
 
-    async def fetch(self, sql: str, *args: object) -> list:
+    async def fetch(self, sql: str, *args: object) -> list[dict[str, str]]:
         # Mimic `SELECT name FROM norm_migrations ORDER BY name`.
         return [{"name": n} for n in sorted(self._applied)]
 
@@ -48,40 +50,60 @@ class _StubConn:
     def __init__(self, raw: _StubRaw) -> None:
         self._conn = raw
 
+    async def raw_execute(self, sql: str, *args: object) -> None:
+        await self._conn.execute(sql, *args)
+
+    async def raw_fetch(self, sql: str, *args: object) -> list[dict[str, str]]:
+        return await self._conn.fetch(sql, *args)
+
+    def raw_transaction(self) -> _StubRaw:
+        return self._conn.transaction()
+
 
 class _MigA(Migration):
     name = "0001_a"
-    operations = [
+    operations: ClassVar[list[Operation]] = [
         CreateTable(
             table="a",
             schema=None,
             columns={"id": ColumnDef(type="BIGINT", nullable=False, primary_key=True)},
         ),
     ]
-    reverse_operations = [DropTable(table="a", schema=None)]
+    reverse_operations: ClassVar[list[Operation] | None] = [
+        DropTable(table="a", schema=None)
+    ]
 
 
 class _MigB(Migration):
     name = "0002_b"
-    operations = [
+    operations: ClassVar[list[Operation]] = [
         CreateTable(
             table="b",
             schema=None,
             columns={"id": ColumnDef(type="BIGINT", nullable=False, primary_key=True)},
         ),
     ]
-    reverse_operations = [DropTable(table="b", schema=None)]
+    reverse_operations: ClassVar[list[Operation] | None] = [
+        DropTable(table="b", schema=None)
+    ]
 
 
-def _runner_with(raw: _StubRaw, migs, tmp_path: Path, monkeypatch) -> MigrationRunner:
-    runner = MigrationRunner(conn=_StubConn(raw), migrations_dir=str(tmp_path))
+def _runner_with(
+    raw: _StubRaw,
+    migs: list[tuple[str, type[Migration]]],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> MigrationRunner:
+    runner = MigrationRunner(
+        conn=cast(AsyncConnection, _StubConn(raw)), migrations_dir=str(tmp_path)
+    )
     monkeypatch.setattr(runner, "_discover", lambda: migs)
     return runner
 
 
 @pytest.mark.asyncio
 async def test_rollback_refuses_non_most_recent_without_force(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     raw = _StubRaw(applied=["0001_a", "0002_b"])
     runner = _runner_with(
@@ -101,19 +123,19 @@ async def test_rollback_refuses_non_most_recent_without_force(
 
 class _MigNoReverse(Migration):
     name = "0001_no_reverse"
-    operations = [
+    operations: ClassVar[list[Operation]] = [
         CreateTable(
             table="z",
             schema=None,
             columns={"id": ColumnDef(type="BIGINT", nullable=False, primary_key=True)},
         ),
     ]
-    reverse_operations = None
+    reverse_operations: ClassVar[list[Operation] | None] = None
 
 
 @pytest.mark.asyncio
 async def test_rollback_refuses_when_reverse_operations_is_none(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     raw = _StubRaw(applied=["0001_no_reverse"])
     runner = _runner_with(
@@ -131,12 +153,12 @@ async def test_rollback_refuses_when_reverse_operations_is_none(
 
 @pytest.mark.asyncio
 async def test_rollback_empty_reverse_is_noop_but_removes_tracking_row(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     class _Mig(Migration):
         name = "0001_empty"
-        operations: list = []
-        reverse_operations: list = []
+        operations: ClassVar[list[Operation]] = []
+        reverse_operations: ClassVar[list[Operation] | None] = []
 
     raw = _StubRaw(applied=["0001_empty"])
     runner = _runner_with(raw, [("0001_empty", _Mig)], tmp_path, monkeypatch)
@@ -153,7 +175,7 @@ async def test_rollback_empty_reverse_is_noop_but_removes_tracking_row(
 
 @pytest.mark.asyncio
 async def test_rollback_executes_reverse_ops_in_order_and_removes_tracking_row(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     raw = _StubRaw(applied=["0001_a", "0002_b"])
     runner = _runner_with(
@@ -173,7 +195,7 @@ async def test_rollback_executes_reverse_ops_in_order_and_removes_tracking_row(
 
 @pytest.mark.asyncio
 async def test_rollback_with_force_allows_non_most_recent(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     raw = _StubRaw(applied=["0001_a", "0002_b"])
     runner = _runner_with(
@@ -192,15 +214,15 @@ async def test_rollback_with_force_allows_non_most_recent(
 
 @pytest.mark.asyncio
 async def test_rollback_non_atomic_migration_skips_transaction(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from norm.migrations.operations import DropIndex
 
     class _NonAtomic(Migration):
         name = "0001_idx"
         atomic = False
-        operations: list = []
-        reverse_operations = [
+        operations: ClassVar[list[Operation]] = []
+        reverse_operations: ClassVar[list[Operation] | None] = [
             DropIndex(name="idx_x", concurrent=True, schema=None, table="t"),
         ]
 

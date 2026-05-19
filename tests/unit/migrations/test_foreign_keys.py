@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from norm.migrations.snapshot import models_to_schema_state
@@ -191,11 +193,11 @@ class Migration(Migration):
 
 
 class TestCodegenForeignKey:
-    def test_renders_foreign_key_constraint_dict_with_all_fields(self, tmp_path):
+    def test_renders_foreign_key_constraint_dict_with_all_fields(self, tmp_path: Path) -> None:
         from norm.migrations.codegen import make_migration
-        from norm.migrations.operations import AddConstraint, DropConstraint
+        from norm.migrations.operations import AddConstraint, DropConstraint, Operation
 
-        forward = [
+        forward: list[Operation] = [
             AddConstraint(
                 table="users",
                 constraint={
@@ -211,7 +213,7 @@ class TestCodegenForeignKey:
                 schema="public",
             ),
         ]
-        reverse = [
+        reverse: list[Operation] = [
             DropConstraint(table="users", name="users_org_id_fkey", schema="public"),
         ]
         path = make_migration(

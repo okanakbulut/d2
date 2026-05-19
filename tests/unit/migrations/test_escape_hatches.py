@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, ClassVar
 
 import pytest
 
+from norm.connection import AsyncConnection
 from norm.migrations import Migration
-from norm.migrations.operations import RunPython, RunSQL
+from norm.migrations.operations import Operation, RunPython, RunSQL
 from norm.migrations.runner import MigrationRunner
 from norm.migrations.state import SchemaState
 
@@ -23,13 +25,13 @@ _CREATE_TRACKING_SQL = (
 
 class _StubRaw:
     def __init__(self, applied: list[str] | None = None) -> None:
-        self.executed: list[tuple[str, tuple]] = []
+        self.executed: list[tuple[str, tuple[Any, ...]]] = []
         self._applied = applied or []
 
     async def execute(self, sql: str, *args: object) -> None:
         self.executed.append((sql, args))
 
-    async def fetch(self, sql: str, *args: object) -> list:
+    async def fetch(self, sql: str, *args: object) -> list[dict[str, Any]]:
         return [{"name": n} for n in sorted(self._applied)]
 
     def transaction(self) -> "_StubRaw":
@@ -42,12 +44,19 @@ class _StubRaw:
         return None
 
 
-class _StubConn:
-    def __init__(self, raw: _StubRaw) -> None:
+class _StubConn(AsyncConnection):
+    def __init__(self, raw: _StubRaw) -> None:  # noqa: D401 — intentional override
+        # Skip AsyncConnection.__init__ to avoid pulling in dialect machinery;
+        # tests only exercise the raw_* methods which read ``self._conn``.
         self._conn = raw
 
 
-def _runner_with(raw: _StubRaw, migs, tmp_path: Path, monkeypatch) -> MigrationRunner:
+def _runner_with(
+    raw: _StubRaw,
+    migs: list[tuple[str, type[Migration]]],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> MigrationRunner:
     runner = MigrationRunner(conn=_StubConn(raw), migrations_dir=str(tmp_path))
     monkeypatch.setattr(runner, "_discover", lambda: migs)
     return runner
@@ -74,7 +83,7 @@ class TestRunSQLApply:
 
 class TestRunPythonApply:
     def test_apply_does_not_mutate_schema_state(self):
-        async def _fn(conn):
+        async def _fn(conn: AsyncConnection) -> None:
             return None
 
         state = SchemaState()
@@ -83,7 +92,7 @@ class TestRunPythonApply:
         assert state == SchemaState()
 
     def test_reverse_fn_defaults_to_none(self):
-        async def _fn(conn):
+        async def _fn(conn: AsyncConnection) -> None:
             return None
 
         op = RunPython(fn=_fn)
@@ -93,7 +102,7 @@ class TestRunPythonApply:
 class TestRunnerRunSQLDispatch:
     @pytest.mark.asyncio
     async def test_apply_splits_sql_on_semicolon_and_executes_each(
-        self, tmp_path: Path, monkeypatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         class _Mig(Migration):
             name = "0001_seed"
@@ -105,7 +114,7 @@ class TestRunnerRunSQLDispatch:
                     )
                 ),
             ]
-            reverse_operations: list = []
+            reverse_operations: ClassVar[list[Operation] | None] = []
 
         raw = _StubRaw()
         runner = _runner_with(raw, [("0001_seed", _Mig)], tmp_path, monkeypatch)
@@ -122,12 +131,12 @@ class TestRunnerRunSQLDispatch:
 
     @pytest.mark.asyncio
     async def test_apply_ignores_empty_statements_from_trailing_semicolon(
-        self, tmp_path: Path, monkeypatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         class _Mig(Migration):
             name = "0001_seed"
             operations = [RunSQL(sql="INSERT INTO foo (id) VALUES (1);")]
-            reverse_operations: list = []
+            reverse_operations: ClassVar[list[Operation] | None] = []
 
         raw = _StubRaw()
         runner = _runner_with(raw, [("0001_seed", _Mig)], tmp_path, monkeypatch)
@@ -145,17 +154,17 @@ class TestRunnerRunSQLDispatch:
 class TestRunnerRunPythonDispatch:
     @pytest.mark.asyncio
     async def test_apply_awaits_fn_with_async_connection(
-        self, tmp_path: Path, monkeypatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         seen_conns: list[object] = []
 
-        async def _backfill(conn):
+        async def _backfill(conn: AsyncConnection) -> None:
             seen_conns.append(conn)
 
         class _Mig(Migration):
             name = "0001_backfill"
             operations = [RunPython(fn=_backfill)]
-            reverse_operations: list = []
+            reverse_operations: ClassVar[list[Operation] | None] = []
 
         raw = _StubRaw()
         conn = _StubConn(raw)
@@ -175,7 +184,7 @@ class TestRunnerRunPythonDispatch:
 class TestRollbackRunSQL:
     @pytest.mark.asyncio
     async def test_rollback_executes_reverse_sql_statements(
-        self, tmp_path: Path, monkeypatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         class _Mig(Migration):
             name = "0001_seed"
@@ -207,7 +216,7 @@ class TestRollbackRunSQL:
 
     @pytest.mark.asyncio
     async def test_rollback_raises_when_reverse_sql_missing(
-        self, tmp_path: Path, monkeypatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         class _Mig(Migration):
             name = "0001_seed"
@@ -224,14 +233,14 @@ class TestRollbackRunSQL:
 class TestRollbackRunPython:
     @pytest.mark.asyncio
     async def test_rollback_awaits_reverse_fn(
-        self, tmp_path: Path, monkeypatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         seen_conns: list[object] = []
 
-        async def _fwd(conn):
+        async def _fwd(conn: AsyncConnection) -> None:
             return None
 
-        async def _rev(conn):
+        async def _rev(conn: AsyncConnection) -> None:
             seen_conns.append(conn)
 
         class _Mig(Migration):
@@ -255,9 +264,9 @@ class TestRollbackRunPython:
 
     @pytest.mark.asyncio
     async def test_rollback_raises_when_reverse_fn_missing(
-        self, tmp_path: Path, monkeypatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        async def _fwd(conn):
+        async def _fwd(conn: AsyncConnection) -> None:
             return None
 
         class _Mig(Migration):
@@ -280,7 +289,12 @@ class TestCheckDdlLint:
         migs.mkdir()
         (migs / "0001_seed.py").write_text(mig_body)
 
-    def test_lint_flags_alter_in_run_sql(self, tmp_path, capsys, monkeypatch):
+    def test_lint_flags_alter_in_run_sql(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         import sys
 
         from norm.migrations.__main__ import cmd_check
@@ -293,7 +307,7 @@ class TestCheckDdlLint:
                 "class Migration(Migration):\n"
                 '    name = "0001_seed"\n'
                 "    operations = [RunSQL(sql='ALTER TABLE foo ADD COLUMN x INT')]\n"
-                "    reverse_operations = []\n"
+                "    reverse_operations: ClassVar[list[Operation] | None] = []\n"
             ),
         )
 
@@ -309,7 +323,9 @@ class TestCheckDdlLint:
         assert "ALTER" in out
         assert "RunSQL" in out
 
-    def test_lint_allows_dml_in_run_sql(self, tmp_path, capsys):
+    def test_lint_allows_dml_in_run_sql(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         import sys
 
         from norm.migrations.__main__ import cmd_check
@@ -322,7 +338,7 @@ class TestCheckDdlLint:
                 "class Migration(Migration):\n"
                 '    name = "0001_seed"\n'
                 "    operations = [RunSQL(sql='INSERT INTO foo (id) VALUES (1)')]\n"
-                "    reverse_operations = []\n"
+                "    reverse_operations: ClassVar[list[Operation] | None] = []\n"
             ),
         )
 
@@ -335,7 +351,9 @@ class TestCheckDdlLint:
         assert rc == 0
         assert capsys.readouterr().out == ""
 
-    def test_lint_flags_create_drop_truncate(self, tmp_path, capsys):
+    def test_lint_flags_create_drop_truncate(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         import sys
 
         from norm.migrations.__main__ import cmd_check
@@ -352,7 +370,7 @@ class TestCheckDdlLint:
                     "class Migration(Migration):\n"
                     '    name = "0001_seed"\n'
                     f"    operations = [RunSQL(sql={kw!r})]\n"
-                    "    reverse_operations = []\n"
+                    "    reverse_operations: ClassVar[list[Operation] | None] = []\n"
                 ),
             )
             sys.path.insert(0, str(sub))
@@ -364,7 +382,9 @@ class TestCheckDdlLint:
 
 
 class TestCodegenPreservesEscapeHatches:
-    def test_make_after_run_sql_only_migration_detects_no_drift(self, tmp_path, capsys):
+    def test_make_after_run_sql_only_migration_detects_no_drift(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         """Replay must treat RunSQL as a no-op for state, so codegen sees no drift."""
         import sys
 
@@ -380,7 +400,7 @@ class TestCodegenPreservesEscapeHatches:
             "class Migration(Migration):\n"
             '    name = "0001_seed"\n'
             "    operations = [RunSQL(sql='INSERT INTO foo (id) VALUES (1)')]\n"
-            "    reverse_operations = []\n"
+            "    reverse_operations: ClassVar[list[Operation] | None] = []\n"
         )
 
         sys.path.insert(0, str(tmp_path))

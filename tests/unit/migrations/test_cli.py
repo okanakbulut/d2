@@ -3,6 +3,8 @@
 import sys
 from pathlib import Path
 
+import pytest
+
 from norm.migrations.__main__ import cmd_check, cmd_make
 
 
@@ -22,7 +24,9 @@ class CliWidget(Table):
 
 
 class TestCmdMake:
-    def test_make_empty_diff_prints_message_and_exits_zero(self, tmp_path, capsys):
+    def test_make_empty_diff_prints_message_and_exits_zero(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         (tmp_path / "models.py").write_text("")
         (tmp_path / "pyproject.toml").write_text("[tool.norm]\n")
         (tmp_path / "migrations").mkdir()
@@ -37,7 +41,9 @@ class TestCmdMake:
         assert capsys.readouterr().out == "No changes detected.\n"
         assert list((tmp_path / "migrations").glob("*.py")) == []
 
-    def test_make_non_empty_writes_file(self, tmp_path, capsys):
+    def test_make_non_empty_writes_file(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         _write_models(tmp_path, MODEL_SIMPLE)
         (tmp_path / "migrations").mkdir()
 
@@ -54,7 +60,9 @@ class TestCmdMake:
 
 
 class TestCmdCheck:
-    def test_check_in_sync_silent_and_zero(self, tmp_path, capsys):
+    def test_check_in_sync_silent_and_zero(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         (tmp_path / "models.py").write_text("")
         (tmp_path / "pyproject.toml").write_text("[tool.norm]\n")
         (tmp_path / "migrations").mkdir()
@@ -68,7 +76,9 @@ class TestCmdCheck:
         assert rc == 0
         assert capsys.readouterr().out == ""
 
-    def test_check_drift_nonzero_with_file_and_line(self, tmp_path, capsys):
+    def test_check_drift_nonzero_with_file_and_line(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         _write_models(tmp_path, MODEL_SIMPLE)
         (tmp_path / "migrations").mkdir()
 

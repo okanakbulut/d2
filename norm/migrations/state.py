@@ -7,6 +7,11 @@ present but empty for forward compatibility.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
+
+
+ConstraintDict = dict[str, Any]
+IndexDict = dict[str, Any]
 
 
 class SchemaError(Exception):
@@ -19,27 +24,27 @@ class ColumnState:
     nullable: bool
     default: str | None = None
     primary_key: bool = False
-    _has_sequence_default: bool = False
+    has_sequence_default: bool = False
 
 
 @dataclass
 class TableState:
     columns: dict[str, ColumnState]
-    constraints: list[dict] = field(default_factory=list)
-    indexes: list[dict] = field(default_factory=list)
+    constraints: list[ConstraintDict] = field(default_factory=list[ConstraintDict])
+    indexes: list[IndexDict] = field(default_factory=list[IndexDict])
     schema: str | None = None
 
 
 @dataclass
 class ViewState:
     definition: str
-    columns: tuple[tuple[str, type], ...]
+    columns: tuple[tuple[str, type[Any]], ...]
     schema: str | None = None
 
 
 @dataclass
 class SchemaState:
-    tables: dict[str, TableState] = field(default_factory=dict)
-    views: dict[str, ViewState] = field(default_factory=dict)
-    extensions: set[str] = field(default_factory=set)
-    schemas: set[str] = field(default_factory=set)
+    tables: dict[str, TableState] = field(default_factory=dict[str, TableState])
+    views: dict[str, ViewState] = field(default_factory=dict[str, ViewState])
+    extensions: set[str] = field(default_factory=set[str])
+    schemas: set[str] = field(default_factory=set[str])

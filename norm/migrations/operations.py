@@ -7,13 +7,30 @@ Each op has `apply(state)` (mutates SchemaState) and `to_ddl()` (returns SQL).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Union
 
-from .state import ColumnState, SchemaError, SchemaState, TableState, ViewState
+from .state import (
+    ColumnState,
+    ConstraintDict,
+    IndexDict,
+    SchemaError,
+    SchemaState,
+    TableState,
+    ViewState,
+)
+
+if TYPE_CHECKING:
+    from norm.connection import AsyncConnection
+
+# Re-exported for callers that import these from operations.
+__all_aliases__ = ("ConstraintDict", "IndexDict")
+ConstraintList = list[ConstraintDict]
+IndexList = list[IndexDict]
+RunPythonFn = Callable[["AsyncConnection"], Awaitable[None]]
 
 
 # SERIAL macro → underlying integer type. Per ADR-0004, state stores the
-# integer type and a `_has_sequence_default` flag; DDL still emits the macro.
+# integer type and a `has_sequence_default` flag; DDL still emits the macro.
 _SERIAL_TO_INT: dict[str, str] = {
     "SERIAL": "INTEGER",
     "BIGSERIAL": "BIGINT",
@@ -46,14 +63,14 @@ class ColumnDef:
                 nullable=self.nullable,
                 default=self.default,
                 primary_key=self.primary_key,
-                _has_sequence_default=True,
+                has_sequence_default=True,
             )
         return ColumnState(
             type=self.type,
             nullable=self.nullable,
             default=self.default,
             primary_key=self.primary_key,
-            _has_sequence_default=False,
+            has_sequence_default=False,
         )
 
 
@@ -282,7 +299,7 @@ def _quote_cols(cols: tuple[str, ...]) -> str:
     return ", ".join(f'"{c}"' for c in cols)
 
 
-def _constraint_sql(constraint: dict) -> str:
+def _constraint_sql(constraint: ConstraintDict) -> str:
     ctype = constraint["type"]
     name = constraint["name"]
     if ctype == "unique":
@@ -311,7 +328,7 @@ def _constraint_sql(constraint: dict) -> str:
 @dataclass
 class AddConstraint:
     table: str
-    constraint: dict
+    constraint: ConstraintDict
     schema: str | None = None
 
     def to_ddl(self) -> str:
@@ -462,7 +479,7 @@ class CreateView:
     name: str
     definition: str
     schema: str | None = None
-    columns: tuple[tuple[str, type], ...] = ()
+    columns: tuple[tuple[str, type[Any]], ...] = ()
     replace: bool = True
 
     def to_ddl(self) -> str:
@@ -502,8 +519,8 @@ class RunPython:
     awaited on rollback.
     """
 
-    fn: Callable[[Any], Awaitable[None]]
-    reverse_fn: Callable[[Any], Awaitable[None]] | None = None
+    fn: RunPythonFn
+    reverse_fn: RunPythonFn | None = None
 
     def apply(self, state: SchemaState) -> None:  # noqa: ARG002
         return None
@@ -523,3 +540,58 @@ class DropView:
 
     def apply(self, state: SchemaState) -> None:
         state.views.pop(self.name, None)
+
+
+# Union of every concrete DDL/data op in this module. Used as the element type
+# for `operations` / `reverse_operations` lists and for diff/codegen lists.
+Operation = Union[
+    CreateTable,
+    DropTable,
+    AddColumn,
+    DropColumn,
+    RenameColumn,
+    AlterColumnType,
+    SetColumnNotNull,
+    DropColumnNotNull,
+    SetColumnDefault,
+    DropColumnDefault,
+    AddConstraint,
+    DropConstraint,
+    CreateIndex,
+    DropIndex,
+    CreateExtension,
+    DropExtension,
+    CreateSchema,
+    DropSchema,
+    CreateView,
+    DropView,
+    RunSQL,
+    RunPython,
+]
+
+
+# Subset of `Operation` whose `to_ddl()` emits SQL — i.e. excludes the data-only
+# escape hatches `RunSQL` / `RunPython`. Used to type the dispatch branches in
+# the runner that fall through to `raw.execute(op.to_ddl())`.
+DDLOperation = Union[
+    CreateTable,
+    DropTable,
+    AddColumn,
+    DropColumn,
+    RenameColumn,
+    AlterColumnType,
+    SetColumnNotNull,
+    DropColumnNotNull,
+    SetColumnDefault,
+    DropColumnDefault,
+    AddConstraint,
+    DropConstraint,
+    CreateIndex,
+    DropIndex,
+    CreateExtension,
+    DropExtension,
+    CreateSchema,
+    DropSchema,
+    CreateView,
+    DropView,
+]

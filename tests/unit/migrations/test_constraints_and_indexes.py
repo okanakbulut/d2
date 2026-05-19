@@ -1,5 +1,7 @@
 """Unit tests for constraints + indexes (issue 143)."""
 
+from pathlib import Path
+
 import pytest
 
 from norm.migrations.naming import (
@@ -12,6 +14,7 @@ from norm.migrations.operations import (
     CreateIndex,
     DropConstraint,
     DropIndex,
+    Operation,
 )
 from norm.migrations.state import (
     ColumnState,
@@ -192,8 +195,8 @@ class TestDropIndex:
 
 class TestCheckWarnsOnAtomicMismatch:
     def test_check_warns_and_exits_non_zero_when_atomic_true_with_concurrent_op(
-        self, tmp_path, capsys
-    ):
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         import sys
 
         from norm.migrations.__main__ import cmd_check
@@ -453,10 +456,12 @@ class Migration(Migration):
 
 
 class TestCodegenConstraintsAndIndexes:
-    def test_renders_non_atomic_with_comment_when_concurrent_ops_present(self, tmp_path):
+    def test_renders_non_atomic_with_comment_when_concurrent_ops_present(
+        self, tmp_path: Path
+    ) -> None:
         from norm.migrations.codegen import make_migration
 
-        forward = [
+        forward: list[Operation] = [
             AddConstraint(
                 table="users",
                 constraint={"type": "unique", "name": "users_email_key", "columns": ("email",)},
@@ -474,7 +479,7 @@ class TestCodegenConstraintsAndIndexes:
             DropConstraint(table="users", name="old_key", schema="public"),
             DropIndex(name="old_idx", concurrent=True, schema="public", table="users"),
         ]
-        reverse = [
+        reverse: list[Operation] = [
             DropConstraint(table="users", name="users_email_key", schema="public"),
             DropIndex(name="idx_users_name", concurrent=True, schema="public", table="users"),
             AddConstraint(
@@ -502,17 +507,17 @@ class TestCodegenConstraintsAndIndexes:
         )
         assert path.read_text() == EXPECTED_CODEGEN_ATOMIC_FALSE
 
-    def test_renders_atomic_true_when_only_constraint_ops(self, tmp_path):
+    def test_renders_atomic_true_when_only_constraint_ops(self, tmp_path: Path) -> None:
         from norm.migrations.codegen import make_migration
 
-        forward = [
+        forward: list[Operation] = [
             AddConstraint(
                 table="t",
                 constraint={"type": "unique", "name": "t_x_key", "columns": ("x",)},
                 schema=None,
             ),
         ]
-        reverse = [DropConstraint(table="t", name="t_x_key", schema=None)]
+        reverse: list[Operation] = [DropConstraint(table="t", name="t_x_key", schema=None)]
         path = make_migration(
             migrations_dir=tmp_path,
             number=2,

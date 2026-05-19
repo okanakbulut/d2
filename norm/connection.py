@@ -65,3 +65,21 @@ class AsyncConnection:
 
     def transaction(self) -> Any:
         return self._conn.transaction()
+
+    # --- Migration-runner accessors -------------------------------------------------
+    # These wrap raw asyncpg calls without going through the query builder; they are
+    # intended for the migration system (DDL + tracking-table maintenance) which
+    # needs to execute literal SQL strings against the underlying driver.
+
+    async def raw_execute(self, sql: str, *args: Any) -> Any:
+        """Execute a raw SQL string against the underlying driver."""
+        return await self._conn.execute(sql, *args)
+
+    async def raw_fetch(self, sql: str, *args: Any) -> list[Any]:
+        """Run a raw SQL query and return the rows from the underlying driver."""
+        rows: Any = await self._conn.fetch(sql, *args)
+        return list(rows)
+
+    def raw_transaction(self) -> Any:
+        """Return the underlying driver's transaction context manager."""
+        return self._conn.transaction()

@@ -23,7 +23,7 @@ class TestModelsToSchemaState:
         assert col.type == "TEXT"
         assert col.nullable is False
         assert col.primary_key is False
-        assert col._has_sequence_default is False
+        assert col.has_sequence_default is False
 
     def test_bigserial_for_pk_with_db_default(self):
         class SnapOrder(Table):
@@ -31,11 +31,11 @@ class TestModelsToSchemaState:
 
         state = models_to_schema_state([SnapOrder])
         col = state.tables["snap_order"].columns["id"]
-        # Per ADR-0004, state stores BIGINT + _has_sequence_default
+        # Per ADR-0004, state stores BIGINT + has_sequence_default
         assert col.type == "BIGINT"
         assert col.primary_key is True
         assert col.nullable is False
-        assert col._has_sequence_default is True
+        assert col.has_sequence_default is True
 
     def test_plain_int_maps_to_bigint(self):
         class SnapCounter(Table):
@@ -43,7 +43,7 @@ class TestModelsToSchemaState:
 
         col = models_to_schema_state([SnapCounter]).tables["snap_counter"].columns["n"]
         assert col.type == "BIGINT"
-        assert col._has_sequence_default is False
+        assert col.has_sequence_default is False
 
     def test_full_type_mapping(self):
         class SnapKitchenSink(Table):
@@ -55,8 +55,8 @@ class TestModelsToSchemaState:
             d: Field[date]
             dec: Field[Decimal]
             u: Field[UUID]
-            j_dict: Field[dict]
-            j_list: Field[list]
+            j_dict: Field[dict[str, object]]
+            j_list: Field[list[object]]
             blob: Field[bytes]
 
         cols = models_to_schema_state([SnapKitchenSink]).tables["snap_kitchen_sink"].columns

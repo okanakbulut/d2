@@ -5,6 +5,7 @@ from __future__ import annotations
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, cast
 
 
 @dataclass(frozen=True)
@@ -13,12 +14,14 @@ class NormConfig:
     models: str  # dotted module path
 
 
-def _read_tool_norm(cwd: Path) -> dict:
+def _read_tool_norm(cwd: Path) -> dict[str, Any]:
     pyproject = cwd / "pyproject.toml"
     if not pyproject.exists():
         return {}
-    data = tomllib.loads(pyproject.read_text())
-    return data.get("tool", {}).get("norm", {}) or {}
+    data: dict[str, Any] = tomllib.loads(pyproject.read_text())
+    tool: dict[str, Any] = data.get("tool", {})
+    norm: dict[str, Any] = tool.get("norm", {})
+    return norm or {}
 
 
 def _detect_models(cwd: Path) -> str:
@@ -40,12 +43,16 @@ def load_config(
     """Load configuration for the migrations CLI."""
     tool_norm = _read_tool_norm(cwd)
 
-    migrations_dir_raw = (
+    migrations_dir_raw: str = (
         migrations_dir_override
-        or tool_norm.get("migrations_dir")
+        or cast(str | None, tool_norm.get("migrations_dir"))
         or "migrations"
     )
-    models = models_override or tool_norm.get("models") or _detect_models(cwd)
+    models: str = (
+        models_override
+        or cast(str | None, tool_norm.get("models"))
+        or _detect_models(cwd)
+    )
 
     migrations_dir = cwd / migrations_dir_raw
     return NormConfig(migrations_dir=migrations_dir, models=models)

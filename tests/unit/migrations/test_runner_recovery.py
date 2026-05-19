@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import ClassVar, cast
 
 import pytest
 
+from norm.connection import AsyncConnection
 from norm.migrations import Migration
-from norm.migrations.operations import CreateIndex
+from norm.migrations.operations import CreateIndex, Operation
 from norm.migrations.runner import MigrationRunner
 
 
@@ -22,7 +24,7 @@ class _StubRaw:
         if self._fail_on is not None and self._fail_on in sql:
             raise RuntimeError("simulated CONCURRENTLY failure")
 
-    async def fetch(self, sql: str, *args: object) -> list:
+    async def fetch(self, sql: str, *args: object) -> list[dict[str, str]]:
         return []
 
     def transaction(self) -> "_StubRaw":
@@ -40,11 +42,20 @@ class _StubConn:
     def __init__(self, raw: _StubRaw) -> None:
         self._conn = raw
 
+    async def raw_execute(self, sql: str, *args: object) -> None:
+        await self._conn.execute(sql, *args)
+
+    async def raw_fetch(self, sql: str, *args: object) -> list[dict[str, str]]:
+        return await self._conn.fetch(sql, *args)
+
+    def raw_transaction(self) -> _StubRaw:
+        return self._conn.transaction()
+
 
 class _NonAtomicMig(Migration):
     name = "0001_non_atomic"
     atomic = False
-    operations = [
+    operations: ClassVar[list[Operation]] = [
         CreateIndex(
             table="t",
             columns=("x",),
@@ -57,10 +68,12 @@ class _NonAtomicMig(Migration):
 
 @pytest.mark.asyncio
 async def test_non_atomic_migration_is_not_wrapped_in_transaction(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     raw = _StubRaw()
-    runner = MigrationRunner(conn=_StubConn(raw), migrations_dir=str(tmp_path))
+    runner = MigrationRunner(
+        conn=cast(AsyncConnection, _StubConn(raw)), migrations_dir=str(tmp_path)
+    )
 
     # Bypass file discovery by patching _discover.
     monkeypatch.setattr(
@@ -87,10 +100,14 @@ async def test_non_atomic_migration_is_not_wrapped_in_transaction(
 
 @pytest.mark.asyncio
 async def test_concurrently_failure_prints_recovery_and_reraises(
-    tmp_path: Path, monkeypatch, capsys
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     raw = _StubRaw(fail_on="CREATE INDEX CONCURRENTLY")
-    runner = MigrationRunner(conn=_StubConn(raw), migrations_dir=str(tmp_path))
+    runner = MigrationRunner(
+        conn=cast(AsyncConnection, _StubConn(raw)), migrations_dir=str(tmp_path)
+    )
 
     monkeypatch.setattr(
         runner, "_discover", lambda: [("0001_non_atomic", _NonAtomicMig)]

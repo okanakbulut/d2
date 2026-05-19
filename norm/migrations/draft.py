@@ -28,10 +28,11 @@ from .operations import (
     DropSchema,
     DropTable,
     DropView,
+    Operation,
     SetColumnDefault,
     SetColumnNotNull,
 )
-from .state import ColumnState, SchemaState, TableState, ViewState
+from .state import ColumnState, ConstraintDict, IndexDict, SchemaState, TableState, ViewState
 
 
 def _column_def_from_state(col: ColumnState) -> ColumnDef:
@@ -53,10 +54,10 @@ def _diff_columns(
     schema: str | None,
     current_cols: dict[str, ColumnState],
     target_cols: dict[str, ColumnState],
-) -> tuple[list, list]:
+) -> tuple[list[Operation], list[Operation]]:
     """Return `(forward, reverse)` ops for column-level changes within a table."""
-    forward: list = []
-    reverse: list = []
+    forward: list[Operation] = []
+    reverse: list[Operation] = []
 
     current_names = list(current_cols)
     target_names = list(target_cols)
@@ -128,6 +129,7 @@ def _diff_columns(
 
         if cur.default != tgt.default:
             if tgt.default is None:
+                assert cur.default is not None  # narrowed by `cur.default != tgt.default`
                 forward.append(
                     DropColumnDefault(table=table_name, column=name, schema=schema)
                 )
@@ -162,14 +164,14 @@ def _diff_columns(
 
 def diff_states(
     current: SchemaState, target: SchemaState
-) -> tuple[list, list]:
+) -> tuple[list[Operation], list[Operation]]:
     """Return `(forward, reverse)` ops to go from `current` to `target`.
 
     `reverse` is the inverse sequence that undoes `forward` against
     `current`.
     """
-    forward: list = []
-    reverse: list = []
+    forward: list[Operation] = []
+    reverse: list[Operation] = []
 
     # Extensions first: indexes (GIN, etc.) and column types may depend on them.
     for name in sorted(target.extensions - current.extensions):
@@ -192,7 +194,7 @@ def diff_states(
 
     # FK AddConstraint ops are deferred until after all CreateTable ops in the
     # forward list, so target tables exist when each FK is added.
-    deferred_fk_adds: list = []
+    deferred_fk_adds: list[Operation] = []
 
     for name in sorted(target_tables - current_tables):
         table = target.tables[name]
@@ -263,9 +265,9 @@ def _create_view_from_state(name: str, view: ViewState) -> CreateView:
 
 def _diff_views(
     current: dict[str, ViewState], target: dict[str, ViewState]
-) -> tuple[list, list]:
-    forward: list = []
-    reverse: list = []
+) -> tuple[list[Operation], list[Operation]]:
+    forward: list[Operation] = []
+    reverse: list[Operation] = []
 
     for name in sorted(set(target) - set(current)):
         v = target[name]
@@ -299,11 +301,11 @@ def _diff_views(
 def _diff_constraints(
     table: str,
     schema: str | None,
-    current: list[dict],
-    target: list[dict],
-) -> tuple[list, list]:
-    forward: list = []
-    reverse: list = []
+    current: list[ConstraintDict],
+    target: list[ConstraintDict],
+) -> tuple[list[Operation], list[Operation]]:
+    forward: list[Operation] = []
+    reverse: list[Operation] = []
     cur_by_name = {c["name"]: c for c in current}
     tgt_by_name = {c["name"]: c for c in target}
     for name, c in tgt_by_name.items():
@@ -317,7 +319,7 @@ def _diff_constraints(
     return forward, reverse
 
 
-def _create_index_from_state(table: str, schema: str | None, idx: dict) -> CreateIndex:
+def _create_index_from_state(table: str, schema: str | None, idx: IndexDict) -> CreateIndex:
     return CreateIndex(
         table=table,
         columns=tuple(idx["columns"]),
@@ -332,11 +334,11 @@ def _create_index_from_state(table: str, schema: str | None, idx: dict) -> Creat
 def _diff_indexes(
     table: str,
     schema: str | None,
-    current: list[dict],
-    target: list[dict],
-) -> tuple[list, list]:
-    forward: list = []
-    reverse: list = []
+    current: list[IndexDict],
+    target: list[IndexDict],
+) -> tuple[list[Operation], list[Operation]]:
+    forward: list[Operation] = []
+    reverse: list[Operation] = []
     cur_by_name = {i["name"]: i for i in current}
     tgt_by_name = {i["name"]: i for i in target}
     for name, i in tgt_by_name.items():

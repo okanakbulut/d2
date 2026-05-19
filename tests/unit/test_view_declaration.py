@@ -31,6 +31,8 @@ class TestViewColumnValidation:
                 id: PrimaryKey[int]
                 other: Field[str]  # noqa: F841
 
+            del Bad
+
         assert "other" in str(exc.value)
 
     def test_mismatched_column_order_raises_type_error(self):
@@ -41,6 +43,8 @@ class TestViewColumnValidation:
                 email: Field[str]
                 id: PrimaryKey[int]
 
+            del Bad
+
     def test_mismatched_column_type_raises_type_error(self):
         query = _Users.select(_Users.id, _Users.email)
 
@@ -48,6 +52,8 @@ class TestViewColumnValidation:
             class Bad(View, query=query):
                 id: PrimaryKey[int]
                 email: Field[int]  # wrong type
+
+            del Bad
 
         assert "email" in str(exc.value)
 

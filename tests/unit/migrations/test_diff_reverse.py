@@ -27,12 +27,18 @@ from norm.migrations.operations import (
 from norm.migrations.state import ColumnState, SchemaState, TableState, ViewState
 
 
-def _state(**kw) -> SchemaState:
+def _state(
+    *,
+    tables: dict[str, TableState] | None = None,
+    views: dict[str, ViewState] | None = None,
+    extensions: set[str] | None = None,
+    schemas: set[str] | None = None,
+) -> SchemaState:
     return SchemaState(
-        tables=kw.get("tables", {}),
-        views=kw.get("views", {}),
-        extensions=kw.get("extensions", set()),
-        schemas=kw.get("schemas", set()),
+        tables=tables if tables is not None else {},
+        views=views if views is not None else {},
+        extensions=extensions if extensions is not None else set(),
+        schemas=schemas if schemas is not None else set(),
     )
 
 

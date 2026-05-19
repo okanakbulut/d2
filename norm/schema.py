@@ -520,8 +520,8 @@ def _setup_table(cls: Any) -> None:
     cls.__table__ = pika_table
     cls.__fields__ = tuple(field_proxies)
 
-    from .migrations.registry import _register
-    _register(cls)
+    from .migrations.registry import register
+    register(cls)
 
 
 class NormMeta(type):
@@ -538,7 +538,7 @@ class NormMeta(type):
             _setup_table(cls)
             if view_query is not None:
                 _validate_view_columns(cls, view_query)
-                cls.__view_query__ = view_query
+                setattr(cls, "__view_query__", view_query)
         return cls
 
 
@@ -947,3 +947,6 @@ class Table(Selectable, Writable):
 
 class View(Selectable):
     """Read-only database view or table."""
+
+    # Populated by ``NormMeta.__new__`` when ``query=`` is supplied.
+    __view_query__: ClassVar[Any] = None

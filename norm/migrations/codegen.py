@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from typing import Any
+
 from .operations import (
     AddColumn,
     AddConstraint,
     AlterColumnType,
     ColumnDef,
+    ConstraintDict,
     CreateExtension,
     CreateIndex,
     CreateSchema,
@@ -23,6 +26,7 @@ from .operations import (
     DropSchema,
     DropTable,
     DropView,
+    Operation,
     RenameColumn,
     SetColumnDefault,
     SetColumnNotNull,
@@ -56,7 +60,7 @@ _SUPPORTED_OPS: tuple[type, ...] = (
 )
 
 
-def _is_non_transactional(op: object) -> bool:
+def _is_non_transactional(op: Operation) -> bool:
     if isinstance(op, CreateIndex) and op.concurrent:
         return True
     if isinstance(op, DropIndex) and op.concurrent:
@@ -65,7 +69,7 @@ def _is_non_transactional(op: object) -> bool:
 _IMPORT_NAMES = ", ".join(sorted(c.__name__ for c in _SUPPORTED_OPS))
 
 
-def _q(value: object) -> str:
+def _q(value: Any) -> str:
     """Render a Python literal preferring double-quoted strings."""
     if value is None:
         return "None"
@@ -78,7 +82,7 @@ def _q(value: object) -> str:
     return repr(value)
 
 
-def _derive_label(forward: list) -> str:
+def _derive_label(forward: list[Operation]) -> str:
     if len(forward) == 1:
         op = forward[0]
         if isinstance(op, CreateTable):
@@ -169,7 +173,7 @@ def _format_drop_default(op: DropColumnDefault, indent: str) -> str:
     )
 
 
-def _format_constraint_dict(c: dict) -> str:
+def _format_constraint_dict(c: ConstraintDict) -> str:
     cols = "(" + ", ".join(_q(x) for x in c["columns"]) + (",)" if len(c["columns"]) == 1 else ")")
     parts = [
         f'"type": {_q(c["type"])}',
@@ -273,7 +277,7 @@ def _format_drop_schema(op: DropSchema, indent: str) -> str:
     return f"{indent}DropSchema(name={_q(op.name)}, cascade={_q(op.cascade)}),"
 
 
-def _format_op(op: object, indent: str) -> str:
+def _format_op(op: Operation, indent: str) -> str:
     if isinstance(op, CreateTable):
         return _format_create_table(op, indent)
     if isinstance(op, DropTable):
@@ -320,8 +324,8 @@ def _format_op(op: object, indent: str) -> str:
 def _render(
     name: str,
     dependencies: list[str],
-    forward: list,
-    reverse: list,
+    forward: list[Operation],
+    reverse: list[Operation],
 ) -> str:
     non_atomic = any(_is_non_transactional(op) for op in forward) or any(
         _is_non_transactional(op) for op in reverse
@@ -369,8 +373,8 @@ def make_migration(
     *,
     migrations_dir: Path,
     number: int,
-    forward: list,
-    reverse: list,
+    forward: list[Operation],
+    reverse: list[Operation],
     dependencies: list[str],
     label: str | None,
 ) -> Path:

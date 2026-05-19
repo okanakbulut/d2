@@ -61,13 +61,13 @@ class TestCreateTableApply:
         assert id_col.type == "BIGINT"
         assert id_col.nullable is False
         assert id_col.primary_key is True
-        assert id_col._has_sequence_default is True
+        assert id_col.has_sequence_default is True
         assert id_col.default is None
 
         email_col = table.columns["email"]
         assert email_col.type == "TEXT"
         assert email_col.nullable is False
-        assert email_col._has_sequence_default is False
+        assert email_col.has_sequence_default is False
 
     def test_normalizes_serial_and_smallserial(self):
         op = CreateTable(
@@ -81,12 +81,12 @@ class TestCreateTableApply:
         state = SchemaState()
         op.apply(state)
         assert state.tables["t"].columns["a"].type == "INTEGER"
-        assert state.tables["t"].columns["a"]._has_sequence_default is True
+        assert state.tables["t"].columns["a"].has_sequence_default is True
         assert state.tables["t"].columns["b"].type == "SMALLINT"
-        assert state.tables["t"].columns["b"]._has_sequence_default is True
+        assert state.tables["t"].columns["b"].has_sequence_default is True
 
 
-def _make_state_with_table(columns: dict) -> SchemaState:
+def _make_state_with_table(columns: dict[str, ColumnState]) -> SchemaState:
     state = SchemaState()
     state.tables["t"] = TableState(columns=dict(columns), schema="public")
     return state

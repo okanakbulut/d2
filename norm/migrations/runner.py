@@ -8,12 +8,13 @@ records each in `norm_migrations`. Supports `atomic=True` (BEGIN/COMMIT) and
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 from norm.connection import AsyncConnection
 
 from . import Migration
-from .operations import CreateIndex, DropIndex, RunPython, RunSQL
-from .replay import _load_migration
+from .operations import CreateIndex, DropIndex, Operation, RunPython, RunSQL
+from .replay import load_migration
 
 
 def _split_sql_statements(sql: str) -> list[str]:
@@ -45,17 +46,17 @@ class MigrationRunner:
             p for p in self._migrations_dir.glob("*.py")
             if not p.name.startswith("_")
         )
-        return [(p.stem, _load_migration(p)) for p in files]
+        return [(p.stem, load_migration(p)) for p in files]
 
     async def _ensure_tracking_table(self) -> None:
-        await self._conn._conn.execute(_CREATE_TRACKING_TABLE)
+        await self._conn.raw_execute(_CREATE_TRACKING_TABLE)
 
     async def applied(self) -> list[str]:
         await self._ensure_tracking_table()
-        rows = await self._conn._conn.fetch(
+        rows = await self._conn.raw_fetch(
             f"SELECT name FROM {self._migrations_table} ORDER BY name"
         )
-        return [r["name"] for r in rows]
+        return [cast(str, r["name"]) for r in rows]
 
     async def pending(self) -> list[str]:
         applied = set(await self.applied())
@@ -75,36 +76,34 @@ class MigrationRunner:
         return newly_applied
 
     async def _apply_one(self, name: str, mig_cls: type[Migration]) -> None:
-        raw = self._conn._conn
         if mig_cls.atomic:
-            async with raw.transaction():
+            async with self._conn.raw_transaction():
                 await self._run_ops_and_record(name, mig_cls)
         else:
             await self._run_ops_and_record(name, mig_cls)
 
     async def _run_ops_and_record(self, name: str, mig_cls: type[Migration]) -> None:
-        raw = self._conn._conn
         for op in mig_cls.operations:
             try:
                 await self._execute_forward(op)
             except Exception:
                 self._print_recovery_for(op)
                 raise
-        await raw.execute(
+        await self._conn.raw_execute(
             f"INSERT INTO {self._migrations_table} (name) VALUES ($1)",
             name,
         )
 
-    async def _execute_forward(self, op: object) -> None:
-        raw = self._conn._conn
+    async def _execute_forward(self, op: Operation) -> None:
         if isinstance(op, RunSQL):
             for stmt in _split_sql_statements(op.sql):
-                await raw.execute(stmt)
+                await self._conn.raw_execute(stmt)
             return
         if isinstance(op, RunPython):
             await op.fn(self._conn)
             return
-        await raw.execute(op.to_ddl())
+        # Every other Operation member is a DDL op with a `to_ddl()` method.
+        await self._conn.raw_execute(op.to_ddl())
 
     async def rollback(self, name: str, *, force: bool = False) -> None:
         await self._ensure_tracking_table()
@@ -128,9 +127,8 @@ class MigrationRunner:
                 f"migration {name!r} has reverse_operations = None; "
                 "edit the migration file to provide an explicit reverse list"
             )
-        raw = self._conn._conn
         if mig_cls.atomic:
-            async with raw.transaction():
+            async with self._conn.raw_transaction():
                 await self._run_reverse_and_unrecord(name, mig_cls)
         else:
             await self._run_reverse_and_unrecord(name, mig_cls)
@@ -138,20 +136,18 @@ class MigrationRunner:
     async def _run_reverse_and_unrecord(
         self, name: str, mig_cls: type[Migration]
     ) -> None:
-        raw = self._conn._conn
         for op in mig_cls.reverse_operations or []:
             try:
                 await self._execute_reverse(op, name)
             except Exception:
                 self._print_recovery_for(op)
                 raise
-        await raw.execute(
+        await self._conn.raw_execute(
             f"DELETE FROM {self._migrations_table} WHERE name = $1",
             name,
         )
 
-    async def _execute_reverse(self, op: object, name: str) -> None:
-        raw = self._conn._conn
+    async def _execute_reverse(self, op: Operation, name: str) -> None:
         if isinstance(op, RunSQL):
             if op.reverse_sql is None:
                 raise RuntimeError(
@@ -159,7 +155,7 @@ class MigrationRunner:
                     "edit the migration file to provide one"
                 )
             for stmt in _split_sql_statements(op.reverse_sql):
-                await raw.execute(stmt)
+                await self._conn.raw_execute(stmt)
             return
         if isinstance(op, RunPython):
             if op.reverse_fn is None:
@@ -169,9 +165,9 @@ class MigrationRunner:
                 )
             await op.reverse_fn(self._conn)
             return
-        await raw.execute(op.to_ddl())
+        await self._conn.raw_execute(op.to_ddl())
 
-    def _print_recovery_for(self, op: object) -> None:
+    def _print_recovery_for(self, op: Operation) -> None:
         if isinstance(op, CreateIndex) and op.concurrent:
             qual = (
                 f'"{op.schema}"."{op.name}"' if op.schema else f'"{op.name}"'

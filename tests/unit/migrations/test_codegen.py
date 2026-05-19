@@ -12,6 +12,7 @@ from norm.migrations.operations import (
     DropColumnDefault,
     DropColumnNotNull,
     DropTable,
+    Operation,
     RenameColumn,
     SetColumnDefault,
     SetColumnNotNull,
@@ -72,8 +73,8 @@ class Migration(Migration):
 
 
 class TestMakeMigration:
-    def test_single_create_table_derives_label_and_writes_file(self, tmp_path: Path):
-        forward = [
+    def test_single_create_table_derives_label_and_writes_file(self, tmp_path: Path) -> None:
+        forward: list[Operation] = [
             CreateTable(
                 table="users",
                 schema="public",
@@ -83,7 +84,7 @@ class TestMakeMigration:
                 },
             ),
         ]
-        reverse = [DropTable(table="users", schema="public")]
+        reverse: list[Operation] = [DropTable(table="users", schema="public")]
 
         path = make_migration(
             migrations_dir=tmp_path,
@@ -97,9 +98,9 @@ class TestMakeMigration:
         assert path.name == "0001_create_users.py"
         assert path.read_text() == EXPECTED_CREATE_SINGLE
 
-    def test_single_drop_table_label(self, tmp_path: Path):
-        forward = [DropTable(table="legacy", schema=None)]
-        reverse = [
+    def test_single_drop_table_label(self, tmp_path: Path) -> None:
+        forward: list[Operation] = [DropTable(table="legacy", schema=None)]
+        reverse: list[Operation] = [
             CreateTable(
                 table="legacy",
                 schema=None,
@@ -117,8 +118,8 @@ class TestMakeMigration:
         )
         assert path.name == "0003_drop_legacy.py"
 
-    def test_multi_op_falls_back_to_auto_label(self, tmp_path: Path):
-        forward = [
+    def test_multi_op_falls_back_to_auto_label(self, tmp_path: Path) -> None:
+        forward: list[Operation] = [
             CreateTable(
                 table="a",
                 schema=None,
@@ -130,7 +131,7 @@ class TestMakeMigration:
                 columns={"id": ColumnDef(type="BIGINT", nullable=False, primary_key=True)},
             ),
         ]
-        reverse = [
+        reverse: list[Operation] = [
             DropTable(table="a", schema=None),
             DropTable(table="b", schema=None),
         ]
@@ -146,15 +147,15 @@ class TestMakeMigration:
         assert path.name == "0002_auto.py"
         assert path.read_text() == EXPECTED_AUTO_MULTI
 
-    def test_explicit_label_overrides_derivation(self, tmp_path: Path):
-        forward = [
+    def test_explicit_label_overrides_derivation(self, tmp_path: Path) -> None:
+        forward: list[Operation] = [
             CreateTable(
                 table="t",
                 schema=None,
                 columns={"id": ColumnDef(type="BIGINT", nullable=False, primary_key=True)},
             ),
         ]
-        reverse = [DropTable(table="t", schema=None)]
+        reverse: list[Operation] = [DropTable(table="t", schema=None)]
 
         path = make_migration(
             migrations_dir=tmp_path,
@@ -198,8 +199,8 @@ class Migration(Migration):
 
 
 class TestMakeMigrationColumnOps:
-    def test_renders_all_column_ops(self, tmp_path: Path):
-        forward = [
+    def test_renders_all_column_ops(self, tmp_path: Path) -> None:
+        forward: list[Operation] = [
             AddColumn(table="t", column="email", type="TEXT", nullable=False, default="''", schema="public"),
             DropColumn(table="t", column="legacy", schema="public"),
             RenameColumn(table="t", old_name="a", new_name="b", schema="public"),
@@ -209,7 +210,7 @@ class TestMakeMigrationColumnOps:
             SetColumnDefault(table="t", column="z", default="0", schema="public"),
             DropColumnDefault(table="t", column="w", schema="public"),
         ]
-        reverse = [
+        reverse: list[Operation] = [
             DropColumn(table="t", column="email", schema="public"),
             AddColumn(table="t", column="legacy", type="TEXT", nullable=True, default=None, schema="public"),
             RenameColumn(table="t", old_name="b", new_name="a", schema="public"),
@@ -266,8 +267,8 @@ class Migration(Migration):
 
 
 class TestMakeMigrationExtensionsAndSchemas:
-    def test_renders_extension_and_schema_ops(self, tmp_path: Path):
-        forward = [
+    def test_renders_extension_and_schema_ops(self, tmp_path: Path) -> None:
+        forward: list[Operation] = [
             CreateExtension(name="pgcrypto"),
             CreateSchema(name="audit"),
             CreateTable(
@@ -278,7 +279,7 @@ class TestMakeMigrationExtensionsAndSchemas:
                 },
             ),
         ]
-        reverse = [
+        reverse: list[Operation] = [
             DropTable(table="event", schema="audit"),
             DropSchema(name="audit", cascade=False),
             DropExtension(name="pgcrypto"),

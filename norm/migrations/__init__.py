@@ -1,11 +1,11 @@
 """Migration system public API (tracer slice — issue 140)."""
 
-from __future__ import annotations
 
 from typing import TYPE_CHECKING, ClassVar
 
 if TYPE_CHECKING:
     from .operations import Operation
+    from .pipeline import SchemaPipeline
 
 
 class Migration:
@@ -22,4 +22,4 @@ class Migration:
     atomic: ClassVar[bool] = True
 
 
-__all__ = ["Migration"]
+__all__ = ["Migration", "SchemaPipeline"]

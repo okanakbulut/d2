@@ -1,6 +1,5 @@
 """Reverse-completeness tests for diff_states (issue 147)."""
 
-from __future__ import annotations
 
 from norm.migrations.draft import diff_states
 from norm.migrations.operations import (
@@ -24,7 +23,7 @@ from norm.migrations.operations import (
     SetColumnDefault,
     SetColumnNotNull,
 )
-from norm.migrations.state import ColumnState, SchemaState, TableState, ViewState
+from norm.migrations.state import ColumnState, IndexDef, SchemaState, TableState, UniqueConstraint, ViewState
 
 
 def _state(
@@ -120,6 +119,7 @@ def test_create_table_reverses_to_drop_table():
 
 
 def test_add_constraint_reverses_to_drop_constraint():
+    uq = UniqueConstraint(name="uq_t_id", columns=("id",))
     current = _state(
         tables={
             "t": TableState(
@@ -134,24 +134,19 @@ def test_add_constraint_reverses_to_drop_constraint():
             "t": TableState(
                 columns={"id": ColumnState(type="BIGINT", nullable=False)},
                 schema=None,
-                constraints=[
-                    {"type": "unique", "name": "uq_t_id", "columns": ("id",)}
-                ],
+                constraints=[uq],
             )
         }
     )
     forward, reverse = diff_states(current, target)
     assert forward == [
-        AddConstraint(
-            table="t",
-            constraint={"type": "unique", "name": "uq_t_id", "columns": ("id",)},
-            schema=None,
-        )
+        AddConstraint(table="t", constraint=uq, schema=None)
     ]
     assert reverse == [DropConstraint(table="t", name="uq_t_id", schema=None)]
 
 
 def test_create_index_reverses_to_drop_index_concurrent():
+    idx = IndexDef(name="ix_t_id", columns=("id",), unique=False, method=None)
     current = _state(
         tables={
             "t": TableState(
@@ -166,7 +161,7 @@ def test_create_index_reverses_to_drop_index_concurrent():
             "t": TableState(
                 columns={"id": ColumnState(type="BIGINT", nullable=False)},
                 schema=None,
-                indexes=[{"name": "ix_t_id", "columns": ("id",), "unique": False, "method": None}],
+                indexes=[idx],
             )
         }
     )

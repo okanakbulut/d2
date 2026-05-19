@@ -1,100 +1,41 @@
 """Migrations CLI: `python -m norm.migrations {make,apply,check}`."""
 
-from __future__ import annotations
 
 import argparse
 import asyncio
-import importlib
-import pkgutil
 import sys
 from pathlib import Path
 from typing import Any
 
 from .codegen import make_migration
 from .config import NormConfig, load_config
-from .draft import diff_states
-from .operations import Operation
-from .registry import MODEL_REGISTRY
-from .replay import replay_migrations
-from .snapshot import models_to_schema_state
-from .state import SchemaState
+from .discovery import existing_migration_files, models_for, next_number
+from .lint import check_atomic_mismatch, check_run_sql_ddl
+from .pipeline import SchemaPipeline
 
 
-def _import_models_module(dotted: str) -> None:
-    if dotted in sys.modules:
-        module = importlib.reload(sys.modules[dotted])
-    else:
-        module = importlib.import_module(dotted)
-    # If it's a package, eagerly import submodules so their classes register.
-    if hasattr(module, "__path__"):
-        for sub in pkgutil.iter_modules(module.__path__):
-            full = f"{dotted}.{sub.name}"
-            if full in sys.modules:
-                importlib.reload(sys.modules[full])
-            else:
-                importlib.import_module(full)
-
-
-def _models_for(cfg: NormConfig) -> list[type]:
-    prefix = cfg.models
-    # Drop any prior registrations under this prefix so a reload reflects the
-    # current source-of-truth (important for tests and the long-lived CLI).
-    stale = [
-        key for key, cls in MODEL_REGISTRY.items()
-        if cls.__module__ == prefix or cls.__module__.startswith(prefix + ".")
-    ]
-    for key in stale:
-        del MODEL_REGISTRY[key]
-
-    _import_models_module(prefix)
-
-    return [
-        cls
-        for cls in MODEL_REGISTRY.values()
-        if cls.__module__ == prefix or cls.__module__.startswith(prefix + ".")
-    ]
-
-
-def _existing_migration_files(migrations_dir: Path) -> list[Path]:
-    if not migrations_dir.exists():
-        return []
-    return sorted(p for p in migrations_dir.glob("*.py") if not p.name.startswith("_"))
-
-
-def _next_number(migrations_dir: Path) -> int:
-    files = _existing_migration_files(migrations_dir)
-    highest = 0
-    for p in files:
-        head = p.stem.split("_", 1)[0]
-        if head.isdigit():
-            highest = max(highest, int(head))
-    return highest + 1
-
-
-def _compute_diff(
-    cfg: NormConfig,
-) -> tuple[tuple[list["Operation"], list["Operation"]], "SchemaState"]:
+def compute_pipeline(cfg: NormConfig) -> SchemaPipeline:
     cfg.migrations_dir.mkdir(parents=True, exist_ok=True)
-    current = replay_migrations(_existing_migration_files(cfg.migrations_dir))
-    target = models_to_schema_state(_models_for(cfg))
-    return diff_states(current, target), target
+    files = existing_migration_files(cfg.migrations_dir)
+    models = models_for(cfg)
+    return SchemaPipeline.build(migration_files=files, models=models)
 
 
 def cmd_make(*, cwd: Path, migrations_dir: str | None = None, models: str | None = None, label: str | None = None) -> int:
     cfg = load_config(cwd, migrations_dir_override=migrations_dir, models_override=models)
-    (forward, reverse), _ = _compute_diff(cfg)
+    pipeline = compute_pipeline(cfg)
 
-    if not forward:
+    if not pipeline.has_changes:
         print("No changes detected.")
         return 0
 
-    deps = [p.stem for p in _existing_migration_files(cfg.migrations_dir)]
-    number = _next_number(cfg.migrations_dir)
+    deps = [p.stem for p in existing_migration_files(cfg.migrations_dir)]
+    number = next_number(cfg.migrations_dir)
     path = make_migration(
         migrations_dir=cfg.migrations_dir,
         number=number,
-        forward=forward,
-        reverse=reverse,
+        forward=pipeline.forward,
+        reverse=pipeline.reverse,
         dependencies=deps,
         label=label,
     )
@@ -105,9 +46,9 @@ def cmd_make(*, cwd: Path, migrations_dir: str | None = None, models: str | None
 def cmd_check(*, cwd: Path, migrations_dir: str | None = None, models: str | None = None) -> int:
     try:
         cfg = load_config(cwd, migrations_dir_override=migrations_dir, models_override=models)
-        atomic_warnings = _check_atomic_mismatch(cfg)
-        ddl_warnings = _check_run_sql_ddl(cfg)
-        (forward, _reverse), _ = _compute_diff(cfg)
+        atomic_warnings = check_atomic_mismatch(cfg)
+        ddl_warnings = check_run_sql_ddl(cfg)
+        pipeline = compute_pipeline(cfg)
     except Exception as exc:  # noqa: BLE001
         print(f"{cwd}:1: migration check failed: {exc}")
         return 2
@@ -117,7 +58,7 @@ def cmd_check(*, cwd: Path, migrations_dir: str | None = None, models: str | Non
             print(f"{path}:1: {msg}")
         return 1
 
-    if not forward:
+    if not pipeline.has_changes:
         return 0
 
     models_file = cwd / (cfg.models.replace(".", "/") + ".py")
@@ -125,103 +66,6 @@ def cmd_check(*, cwd: Path, migrations_dir: str | None = None, models: str | Non
         models_file = cwd / cfg.models.replace(".", "/") / "__init__.py"
     print(f"{models_file}:1: schema drift detected")
     return 1
-
-
-def _check_atomic_mismatch(cfg: NormConfig) -> list[tuple[Path, str]]:
-    from .operations import CreateIndex, DropIndex
-    from .replay import load_migration
-
-    warnings: list[tuple[Path, str]] = []
-    for path in _existing_migration_files(cfg.migrations_dir):
-        mig_cls = load_migration(path)
-        if not mig_cls.atomic:
-            continue
-        has_non_tx = any(
-            (isinstance(op, CreateIndex) and op.concurrent)
-            or (isinstance(op, DropIndex) and op.concurrent)
-            for op in mig_cls.operations
-        )
-        if has_non_tx:
-            warnings.append(
-                (
-                    path,
-                    f"{mig_cls.name}: atomic = True but operations include "
-                    "CONCURRENTLY index ops; set atomic = False",
-                )
-            )
-    return warnings
-
-
-_DDL_KEYWORDS = ("ALTER", "CREATE", "DROP", "TRUNCATE")
-
-
-def _strip_sql_noise(sql: str) -> str:
-    """Remove single/double-quoted strings and SQL comments for keyword scan."""
-    out: list[str] = []
-    i = 0
-    n = len(sql)
-    while i < n:
-        ch = sql[i]
-        if ch == "-" and i + 1 < n and sql[i + 1] == "-":
-            # Line comment.
-            nl = sql.find("\n", i)
-            i = n if nl == -1 else nl
-            continue
-        if ch == "/" and i + 1 < n and sql[i + 1] == "*":
-            end = sql.find("*/", i + 2)
-            i = n if end == -1 else end + 2
-            continue
-        if ch in ("'", '"'):
-            quote = ch
-            i += 1
-            while i < n:
-                if sql[i] == "\\" and i + 1 < n:
-                    i += 2
-                    continue
-                if sql[i] == quote:
-                    i += 1
-                    break
-                i += 1
-            continue
-        out.append(ch)
-        i += 1
-    return "".join(out)
-
-
-def _run_sql_contains_ddl(sql: str) -> str | None:
-    """Return the first DDL keyword found, else None."""
-    cleaned = _strip_sql_noise(sql).upper()
-    # Tokenise on word boundaries.
-    import re
-    tokens = re.findall(r"[A-Z]+", cleaned)
-    for kw in _DDL_KEYWORDS:
-        if kw in tokens:
-            return kw
-    return None
-
-
-def _check_run_sql_ddl(cfg: NormConfig) -> list[tuple[Path, str]]:
-    from .operations import RunSQL
-    from .replay import load_migration
-
-    warnings: list[tuple[Path, str]] = []
-    for path in _existing_migration_files(cfg.migrations_dir):
-        mig_cls = load_migration(path)
-        for op in list(mig_cls.operations) + list(mig_cls.reverse_operations or []):
-            if not isinstance(op, RunSQL):
-                continue
-            kw = _run_sql_contains_ddl(op.sql)
-            if kw is not None:
-                warnings.append(
-                    (
-                        path,
-                        f"{mig_cls.name}: RunSQL contains DDL keyword {kw!r}; "
-                        "use a typed DDL op (e.g. AlterColumnType, CreateTable) "
-                        "instead so the schema model stays in sync",
-                    )
-                )
-                break
-    return warnings
 
 
 async def cmd_apply(*, cwd: Path, dsn: str, migrations_dir: str | None = None, models: str | None = None) -> int:

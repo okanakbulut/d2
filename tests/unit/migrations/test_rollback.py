@@ -1,6 +1,5 @@
 """Unit tests for MigrationRunner.rollback (issue 147)."""
 
-from __future__ import annotations
 
 from pathlib import Path
 from typing import ClassVar, cast

@@ -5,7 +5,6 @@ records each in `norm_migrations`. Supports `atomic=True` (BEGIN/COMMIT) and
 `atomic=False` (no transaction wrap).
 """
 
-from __future__ import annotations
 
 from pathlib import Path
 from typing import cast

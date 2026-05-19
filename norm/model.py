@@ -54,7 +54,7 @@ class IndexDef:
 @dataclass(frozen=True)
 class TableMeta:
     table: str | None = None
-    schema: str | None = None
+    schema: str | None = "public"
     indexes: tuple[IndexDef, ...] = ()
     foreign_keys: tuple[ForeignKey, ...] = ()
     extensions: tuple[str, ...] = ()

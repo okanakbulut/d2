@@ -129,3 +129,19 @@ class TestSnapshotExtensionsAndSchemas:
         state = models_to_schema_state([SnapPlain])
         assert state.extensions == set()
         assert state.schemas == set()
+
+    def test_default_schema_stored_as_public_in_table_state(self):
+        class SnapDefaultSchema(Table):
+            __meta__ = TableMeta(table="snap_default_schema")
+            x: Field[str]
+
+        state = models_to_schema_state([SnapDefaultSchema])
+        assert state.tables["snap_default_schema"].schema == "public"
+
+    def test_explicit_schema_none_stored_as_none_in_table_state(self):
+        class SnapNoSchema(Table):
+            __meta__ = TableMeta(table="snap_no_schema", schema=None)
+            x: Field[str]
+
+        state = models_to_schema_state([SnapNoSchema])
+        assert state.tables["snap_no_schema"].schema is None

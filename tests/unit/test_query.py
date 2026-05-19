@@ -3,7 +3,8 @@ column aliasing, arithmetic expressions, and insert."""
 
 import pytest
 
-from norm.schema import Field
+from norm import TableMeta, Table
+from norm.schema import Field, PrimaryKey
 from .conftest import Users, UserModelExplicit
 
 
@@ -32,6 +33,22 @@ class TestSelect:
         sql, params = UserModelExplicit.select(UserModelExplicit.id).build()
         assert sql == 'SELECT "accounts_user"."id" FROM "public"."accounts_user"'
         assert params == ()
+
+    def test_default_schema_produces_public_prefix(self):
+        class Product(Table):
+            __meta__ = TableMeta(table="products")
+            id: PrimaryKey[int]
+
+        sql, _ = Product.select(Product.id).build()
+        assert sql == 'SELECT "products"."id" FROM "public"."products"'
+
+    def test_explicit_schema_none_opts_out_of_prefix(self):
+        class RawThing(Table):
+            __meta__ = TableMeta(table="raw_thing", schema=None)
+            id: PrimaryKey[int]
+
+        sql, _ = RawThing.select(RawThing.id).build()
+        assert sql == 'SELECT "raw_thing"."id" FROM "raw_thing"'
 
 
 class TestWhere:
@@ -101,6 +118,28 @@ class TestOrderByLimitOffset:
         assert sql == 'SELECT "users"."id" FROM "public"."users"'
         assert params == ()
 
+    def test_order_by_field_desc_method(self):
+        # Field.desc() should produce ORDER BY ... DESC, not ASC
+        sql, params = Users.select(Users.id).order_by(Users.name.desc()).build()
+        assert sql == 'SELECT "users"."id" FROM "public"."users" ORDER BY "users"."name" DESC'
+        assert params == ()
+
+    def test_order_by_field_asc_method(self):
+        # Field.asc() should produce ORDER BY ... ASC
+        sql, params = Users.select(Users.id).order_by(Users.name.asc()).build()
+        assert sql == 'SELECT "users"."id" FROM "public"."users" ORDER BY "users"."name" ASC'
+        assert params == ()
+
+    def test_order_by_mixed_asc_desc_field_methods(self):
+        # Mixed directions via .asc()/.desc() on individual fields
+        sql, params = (
+            Users.select(Users.id)
+            .order_by(Users.name.asc(), Users.age.desc())
+            .build()
+        )
+        assert sql == 'SELECT "users"."id" FROM "public"."users" ORDER BY "users"."name" ASC,"users"."age" DESC'
+        assert params == ()
+
     def test_limit(self):
         sql, params = Users.select(Users.id).limit(50).build()
         assert sql == 'SELECT "users"."id" FROM "public"."users" LIMIT 50'
@@ -166,6 +205,17 @@ class TestArithmeticExpressions:
 
     def test_arithmetic_returns_field(self):
         assert isinstance(Users.age + 1, Field)
+
+    def test_aliased_on_arithmetic_expression(self):
+        # .aliased() on an arithmetic expression must preserve the full expression
+        sql, params = Users.select((Users.age + Users.id).aliased("total")).build()
+        assert sql == 'SELECT "users"."age"+"users"."id" "total" FROM "public"."users"'
+        assert params == ()
+
+    def test_aliased_on_arithmetic_with_literal(self):
+        sql, params = Users.select((Users.age * 2).aliased("doubled")).build()
+        assert sql == 'SELECT "users"."age"*$1 "doubled" FROM "public"."users"'
+        assert params == (2,)
 
 
 class TestInsert:

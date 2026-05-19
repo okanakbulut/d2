@@ -32,10 +32,10 @@ class TestTableMeta:
         assert meta.table == "users"
         assert meta.schema == "public"
 
-    def test_defaults_none(self):
+    def test_defaults(self):
         meta = TableMeta()
         assert meta.table is None
-        assert meta.schema is None
+        assert meta.schema == "public"
 
     def test_immutable(self):
         meta = TableMeta(table="users")

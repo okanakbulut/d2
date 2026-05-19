@@ -35,9 +35,9 @@ async def setup_tables(pg_conn: Any) -> None:
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_json_single_row_returns_str(pg_conn: Any) -> None:
-    """Without alias, .json() wraps in row_to_json — fetch_val returns a raw JSON string."""
+    """Without alias, .json() wraps in row_to_json — fetchval returns a raw JSON string."""
     conn = AsyncConnection(pg_conn)
-    result = await conn.fetch_val(
+    result = await conn.fetchval(
         JUsers.select(JUsers.id, JUsers.name, JUsers.email)
         .where(JUsers.name == "Alice")
         .json()
@@ -50,7 +50,7 @@ async def test_json_single_row_returns_str(pg_conn: Any) -> None:
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_json_single_row_returns_object(pg_conn: Any) -> None:
-    """Without alias, .json() wraps in row_to_json — fetch_val returns a raw JSON string."""
+    """Without alias, .json() wraps in row_to_json — fetchval returns a raw JSON string."""
     conn = AsyncConnection(pg_conn)
     result = await conn.fetch(
         JUsers.select(JUsers.id, JUsers.name, JUsers.email)
@@ -67,7 +67,7 @@ async def test_json_single_row_returns_object(pg_conn: Any) -> None:
 async def test_json_aliased_returns_str_with_list(pg_conn: Any) -> None:
     """.aliased("users").json() wraps in json_build_object — result is a raw JSON string."""
     conn = AsyncConnection(pg_conn)
-    result = await conn.fetch_val(
+    result = await conn.fetchval(
         JUsers.select(JUsers.name, JUsers.email)
         .order_by(JUsers.name)
         .aliased("users")
@@ -106,7 +106,7 @@ async def test_json_aliased_empty_table_returns_empty_list(pg_conn: Any) -> None
     """COALESCE ensures an empty result gives [] rather than NULL."""
     await pg_conn.execute("DELETE FROM public.j_users")
     conn = AsyncConnection(pg_conn)
-    result = await conn.fetch_val(
+    result = await conn.fetchval(
         JUsers.select(JUsers.name, JUsers.email)
         .aliased("users")
         .json()
@@ -119,7 +119,7 @@ async def test_json_aliased_empty_table_returns_empty_list(pg_conn: Any) -> None
 async def test_json_with_where_filter(pg_conn: Any) -> None:
     """WHERE clause is applied inside the inner query before JSON wrapping."""
     conn = AsyncConnection(pg_conn)
-    result = await conn.fetch_val(
+    result = await conn.fetchval(
         JUsers.select(JUsers.name, JUsers.email)
         .where(JUsers.name == "Bob")
         .aliased("users")

@@ -249,6 +249,11 @@ class _ArithField(Field[Any]):
         object.__setattr__(self, "_op", op)
         object.__setattr__(self, "_right", right)
 
+    def aliased(self, alias: str) -> "Field[Any]":
+        new = _ArithField(self._left, self._op, self._right)
+        object.__setattr__(new, "_alias", alias)
+        return new
+
     def to_column(self, params: list[Any], dialect: Any) -> Any:
         left_term = self._left.to_column(params, dialect)
         right = self._right
@@ -260,7 +265,11 @@ class _ArithField(Field[Any]):
             right_term = pypika.terms.Parameter(dialect.placeholder(len(params)))
         ops: dict[str, Any] = {"+": left_term + right_term, "-": left_term - right_term,
                                "*": left_term * right_term, "/": left_term / right_term}
-        return ops[op]
+        result = ops[op]
+        alias = getattr(self, "_alias", None)
+        if alias:
+            return result.as_(alias)
+        return result
 
 
 
@@ -504,7 +513,12 @@ def _parse_fields(model: type) -> list[tuple[str, type, FieldDef, type[Field[Any
 def _setup_table(cls: Any) -> None:
     meta: TableMeta | None = getattr(cls, "__meta__", None)
     table_name = (meta.table if meta and meta.table else None) or _infer_table_name(cls.__name__)
-    schema_name = (meta.schema if meta and meta.schema else None) or _infer_schema(getattr(cls, "__module__", "") or "")
+    if meta is None:
+        schema_name = _infer_schema(getattr(cls, "__module__", "") or "") or "public"
+    elif meta.schema is None:
+        schema_name = None
+    else:
+        schema_name = meta.schema
 
     pika_table = pypika.Table(table_name, schema=schema_name) if schema_name else pypika.Table(table_name)
 
@@ -695,7 +709,11 @@ class Selectable(Entity):
     @classmethod
     def order_by(cls, *fields: Field[Any], desc: bool = False) -> type[Self]:
         q = cls.clone()
-        q.__orderings__ = cls.__orderings__ + tuple((f, desc) for f in fields)
+        orderings: list[tuple[Field[Any], bool]] = []
+        for f in fields:
+            is_desc = f.descending if isinstance(f, _SortedField) else desc
+            orderings.append((f, is_desc))
+        q.__orderings__ = cls.__orderings__ + tuple(orderings)
         return q
 
     @classmethod

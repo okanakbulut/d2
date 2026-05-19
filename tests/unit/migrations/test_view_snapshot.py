@@ -26,6 +26,6 @@ class TestSnapshotView:
             "active_users_view": ViewState(
                 definition=expected_sql,
                 columns=(("id", int), ("email", str)),
-                schema=None,
+                schema="public",
             )
         }

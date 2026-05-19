@@ -47,7 +47,7 @@ class AsyncConnection:
             return None
         return msgspec.convert(dict(row), result_type)
 
-    async def fetch_val(self, qb: AnyQuery) -> Any:
+    async def fetchval(self, qb: AnyQuery) -> Any:
         await self._ensure_json_codec()
         sql, params = qb.build(self._dialect)
         val = await self._conn.fetchval(sql, *params)

@@ -66,7 +66,7 @@ class TestSnapshotForeignKeys:
             ForeignKeyConstraint(
                 name="fk_user_org_id_fkey",
                 columns=("org_id",),
-                references_schema=None,
+                references_schema="public",
                 references_table="fk_org",
                 references_column="id",
                 on_delete="CASCADE",
@@ -94,7 +94,7 @@ class TestSnapshotForeignKeys:
             ForeignKeyConstraint(
                 name="fk_member_org_id_fkey",
                 columns=("org_id",),
-                references_schema=None,
+                references_schema="public",
                 references_table="fk_org",
                 references_column="id",
                 on_delete="CASCADE",

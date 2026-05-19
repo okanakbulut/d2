@@ -76,19 +76,19 @@ class TestFetchVal:
     def test_returns_scalar(self, driver: MagicMock):
         driver.fetchval = AsyncMock(return_value=42)
         conn = AsyncConnection(driver)
-        result = asyncio.run(conn.fetch_val(Users.select(Users.id).where(Users.age >= 18)))
+        result = asyncio.run(conn.fetchval(Users.select(Users.id).where(Users.age >= 18)))
         assert result == 42
 
     def test_returns_none_when_no_row(self, driver: MagicMock):
         driver.fetchval = AsyncMock(return_value=None)
         conn = AsyncConnection(driver)
-        result = asyncio.run(conn.fetch_val(Users.select(Users.id).where(Users.age >= 18)))
+        result = asyncio.run(conn.fetchval(Users.select(Users.id).where(Users.age >= 18)))
         assert result is None
 
     def test_calls_fetchval_with_correct_args(self, driver: MagicMock):
         driver.fetchval = AsyncMock(return_value=None)
         conn = AsyncConnection(driver)
-        asyncio.run(conn.fetch_val(Users.select(Users.id).where(Users.age >= 18)))
+        asyncio.run(conn.fetchval(Users.select(Users.id).where(Users.age >= 18)))
         driver.fetchval.assert_called_once_with(
             'SELECT "users"."id" FROM "public"."users" WHERE "users"."age">=$1',
             18,

@@ -14,11 +14,12 @@ import pytest
 MODELS_INITIAL = '''
 from norm.schema import Table, Field, PrimaryKey
 from norm.model import field, TableMeta
+from norm import db
 
 
 class ColOpWidget(Table):
     __meta__ = TableMeta(table="norm_colop_widgets", schema="public")
-    id: PrimaryKey[int] = field(db_default=True)
+    id: PrimaryKey[int] = field(default=db.serial())
     label: Field[str]
 '''
 
@@ -26,11 +27,12 @@ class ColOpWidget(Table):
 MODELS_WITH_ADDED_FIELD = '''
 from norm.schema import Table, Field, PrimaryKey
 from norm.model import field, TableMeta
+from norm import db
 
 
 class ColOpWidget(Table):
     __meta__ = TableMeta(table="norm_colop_widgets", schema="public")
-    id: PrimaryKey[int] = field(db_default=True)
+    id: PrimaryKey[int] = field(default=db.serial())
     label: Field[str]
     score: Field[int]
 '''

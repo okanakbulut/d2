@@ -1,7 +1,11 @@
+from . import db
+from .connection import AsyncConnection, AsyncpgDriver
+from .driver import Driver
 from .model import FieldDef, TableMeta, field
 from .schema import (
     Field,
     Column,
+    ForeignKey,
     PrimaryKey,
     Unique,
     Index,
@@ -14,14 +18,17 @@ from .schema import (
 )
 from .query import With
 from .dialect import Dialect, PostgresDialect
-from .connection import AsyncConnection
-
 __all__ = [
+    "db",
+    "AsyncConnection",
+    "AsyncpgDriver",
+    "Driver",
     "field",
     "FieldDef",
     "TableMeta",
     "Field",
     "Column",
+    "ForeignKey",
     "PrimaryKey",
     "Unique",
     "Index",
@@ -34,5 +41,4 @@ __all__ = [
     "excluded",
     "Dialect",
     "PostgresDialect",
-    "AsyncConnection",
 ]

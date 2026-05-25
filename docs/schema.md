@@ -3,8 +3,8 @@
 ## Table and View
 
 ```python
->>> from norm import Table, View, Field, PrimaryKey, Unique, Index, field, TableMeta
->>> from norm.model import ForeignKey, IndexDef
+>>> from norm import Table, View, Field, PrimaryKey, ForeignKey, Unique, Index, field, TableMeta, db
+>>> from norm.model import IndexDef
 >>> class MyTable(Table):
 ...     id: PrimaryKey[int]
 ...
@@ -51,12 +51,12 @@ Use `field()` as the class-level default to attach metadata that annotations alo
 
 ```python
 >>> class Post(Table):
-...     id:    PrimaryKey[int] = field(db_default=True)
+...     id:    PrimaryKey[int] = field(default=db.serial())
 ...     title: Field[str]
 ...
 >>> class Comment(Table):
-...     id:      PrimaryKey[int] = field(db_default=True)
-...     post_id: Field[int]      = field(fk=ForeignKey(to=Post.id, on_delete="CASCADE"))
+...     id:      PrimaryKey[int] = field(default=db.serial())
+...     post_id: ForeignKey[Post] = field(on_delete=db.CASCADE)
 ...     body:    Field[str]
 ...     slug:    Field[str]      = field(name="url_slug")
 ...     flagged: Unique[str]     = field(unique=True)
@@ -68,11 +68,12 @@ Use `field()` as the class-level default to attach metadata that annotations alo
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `db_default` | `bool` | DB fills this in; norm skips it in INSERT |
+| `default` | `DbExpr \| None` | DB-level default (e.g. `db.serial()`, `db.now()`) |
+| `on_delete` | `ReferentialAction \| None` | FK delete action (`db.CASCADE`, `db.SET_NULL`, etc.) |
+| `on_update` | `ReferentialAction \| None` | FK update action |
 | `name` | `str \| None` | Override the column name in the database |
 | `unique` | `bool` | Add a UNIQUE constraint |
 | `index` | `bool` | Create an index on this column |
-| `fk` | `ForeignKey \| None` | Foreign key declaration |
 
 ## TableMeta
 
@@ -93,7 +94,7 @@ Use `field()` as the class-level default to attach metadata that annotations alo
 ...         ),
 ...         extensions=("uuid-ossp",),
 ...     )
-...     id:         PrimaryKey[int] = field(db_default=True)
+...     id:         PrimaryKey[int] = field(default=db.serial())
 ...     user_id:    Field[int]
 ...     created_at: Field[str]
 ...
@@ -107,36 +108,29 @@ Use `field()` as the class-level default to attach metadata that annotations alo
 | `table` | `str \| None` | Override table name (default: snake_case of class name) |
 | `schema` | `str \| None` | Postgres schema |
 | `indexes` | `tuple[IndexDef, ...]` | Composite or method-specific indexes |
-| `foreign_keys` | `tuple[ForeignKey, ...]` | Table-level FKs (rarely needed; prefer `field(fk=...)`) |
+| `foreign_keys` | `tuple[ForeignKey, ...]` | Table-level FKs (rarely needed; prefer `ForeignKey[T]` annotation) |
 | `extensions` | `tuple[str, ...]` | Extensions to ensure exist |
 
 ## ForeignKey
 
+Declare foreign keys using the `ForeignKey[T]` type annotation, where `T` is the referenced `Table` class. Use `field(on_delete=...)` to set the referential action.
+
 ```python
 >>> class User(Table):
-...     id: PrimaryKey[int] = field(db_default=True)
+...     id: PrimaryKey[int] = field(default=db.serial())
 ...
->>> # Recommended: reference via Field proxy (type-safe, rename-proof)
 >>> class Profile(Table):
-...     id:      PrimaryKey[int] = field(db_default=True)
-...     user_id: Field[int] = field(fk=ForeignKey(to=User.id, on_delete="CASCADE"))
+...     id:      PrimaryKey[int]  = field(default=db.serial())
+...     user_id: ForeignKey[User] = field(on_delete=db.CASCADE)
 ...
->>> # Alternative: string reference (for forward refs or external tables)
 >>> class Audit(Table):
-...     id:      PrimaryKey[int] = field(db_default=True)
-...     user_id: Field[int] = field(fk=ForeignKey(to="public.users.id", on_delete="SET NULL"))
+...     id:      PrimaryKey[int]  = field(default=db.serial())
+...     user_id: ForeignKey[User] = field(on_delete=db.SET_NULL)
 ...
 
 ```
 
-`ForeignKey` fields:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `to` | `Field \| str` | Target column |
-| `on_delete` | `str \| None` | `CASCADE`, `SET NULL`, `RESTRICT`, `NO ACTION` |
-| `on_update` | `str \| None` | Same options as `on_delete` |
-| `name` | `str \| None` | Override constraint name |
+Referential actions are constants on the `db` module: `db.CASCADE`, `db.SET_NULL`, `db.RESTRICT`, `db.NO_ACTION`, `db.SET_DEFAULT`.
 
 ## IndexDef
 

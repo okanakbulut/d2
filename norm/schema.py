@@ -13,7 +13,7 @@ import pypika.terms
 from pypika.utils import format_alias_sql, format_quotes
 
 from .filter import Filter, AnyFilter
-from .model import FieldDef, ForeignKey, TableMeta
+from .model import FieldDef, TableMeta, _INFER
 from .dialect import Dialect, PostgresDialect
 from .query import InsertQuery, UpdateQuery, DeleteQuery, JoinClause
 
@@ -428,10 +428,15 @@ class Index(Field[T]):
     pass
 
 
+class ForeignKey(Field[T]):
+    pass
+
+
 _FIELD_FLAGS: dict[type, dict[str, bool]] = {
-    PrimaryKey: {"primary_key": True},
+    PrimaryKey: {},
     Unique: {"unique": True},
     Index: {"index": True},
+    ForeignKey: {},
     Field: {},
 }
 
@@ -439,7 +444,11 @@ _FIELD_FLAGS: dict[type, dict[str, bool]] = {
 def _infer_table_name(class_name: str) -> str:
     name = re.sub(r"Model$", "", class_name)
     name = re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
-    return name
+    if name.endswith(("ch", "sh")) or name.endswith(("s", "x", "z")):
+        return name + "es"
+    if name.endswith("y") and len(name) > 1 and name[-2] not in "aeiou":
+        return name[:-1] + "ies"
+    return name + "s"
 
 
 def _infer_schema(module: str) -> str | None:
@@ -479,31 +488,47 @@ def _parse_fields(model: type) -> list[tuple[str, type, FieldDef, type[Field[Any
             continue
 
         base_flags = _FIELD_FLAGS.get(field_cls, {})
-        primary_key = base_flags.get("primary_key", False)
         unique = base_flags.get("unique", False)
         index = base_flags.get("index", False)
-        db_default = False
         col_name_override: str | None = None
-        fk: ForeignKey | None = None
+        references: type | None = None
+
+        # PrimaryKey[Table] is not allowed — use a separate id and ForeignKey(unique=True)
+        if issubclass(field_cls, PrimaryKey) and isinstance(python_type, type) and hasattr(python_type, "__fields__"):
+            raise TypeError(
+                f"{field_cls.__name__}[{python_type.__name__}] is not allowed. "
+                "Use a separate id: PrimaryKey[int] and a ForeignKey with unique=True instead."
+            )
+
+        # ForeignKey[Model] — resolve the referenced model's PK type
+        if issubclass(field_cls, ForeignKey) and isinstance(python_type, type) and hasattr(python_type, "__fields__"):
+            referenced_model = python_type
+            pk_proxy = next(
+                (f for f in cast(Any, referenced_model).__fields__ if isinstance(f, PrimaryKey)),
+                None,
+            )
+            python_type = pk_proxy.python_type if pk_proxy else int
+            references = referenced_model
 
         class_default = vars(model).get(attr_name)
-        if isinstance(class_default, FieldDef):
-            db_default = class_default.db_default
-            col_name_override = class_default.name
-            if class_default.unique:
+        fd_default = class_default if isinstance(class_default, FieldDef) else None
+
+        if fd_default is not None:
+            col_name_override = fd_default.name
+            if fd_default.unique:
                 unique = True
-            if class_default.index:
+            if fd_default.index:
                 index = True
-            fk = class_default.fk
 
         fd = FieldDef(
-            primary_key=primary_key,
+            default=fd_default.default if fd_default is not None else None,
             unique=unique,
             index=index,
-            db_default=db_default,
             name=col_name_override,
             nullable=nullable,
-            fk=fk,
+            references=references,
+            on_delete=fd_default.on_delete if fd_default is not None else None,
+            on_update=fd_default.on_update if fd_default is not None else None,
         )
         result.append((attr_name, python_type, fd, field_cls))
 
@@ -513,7 +538,7 @@ def _parse_fields(model: type) -> list[tuple[str, type, FieldDef, type[Field[Any
 def _setup_table(cls: Any) -> None:
     meta: TableMeta | None = getattr(cls, "__meta__", None)
     table_name = (meta.table if meta and meta.table else None) or _infer_table_name(cls.__name__)
-    if meta is None:
+    if meta is None or meta.schema is _INFER:
         schema_name = _infer_schema(getattr(cls, "__module__", "") or "") or "public"
     elif meta.schema is None:
         schema_name = None
@@ -926,7 +951,7 @@ class Writable(Entity):
     def _default_columns(cls) -> frozenset[str]:
         return frozenset(
             f.column_name for f in cls.__fields__
-            if f.field_def.db_default or f.field_def.primary_key
+            if f.field_def.default is not None
         )
 
     @classmethod

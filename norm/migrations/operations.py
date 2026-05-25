@@ -5,7 +5,7 @@ Each op has `apply(state)` (mutates SchemaState) and `to_ddl()` (returns SQL).
 """
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, ClassVar, Union
+from typing import Any, Awaitable, Callable, ClassVar, Union
 
 from .state import (
     ColumnState,
@@ -22,14 +22,13 @@ from .state import (
     serial_display_type,
 )
 
-if TYPE_CHECKING:
-    from norm.connection import AsyncConnection
+from norm.driver import Driver
 
 # Re-exported for callers that import these from operations.
 __all_aliases__ = ("ConstraintDict", "IndexDict")
 ConstraintList = list[ConstraintDict]
 IndexList = list[IndexDict]
-RunPythonFn = Callable[["AsyncConnection"], Awaitable[None]]
+RunPythonFn = Callable[[Driver], Awaitable[None]]
 
 # Backward-compatible alias: migration files on disk use ColumnDef(...).
 # ColumnState normalizes SERIAL types in __post_init__ so ColumnDef(type="BIGSERIAL", ...)
@@ -219,7 +218,7 @@ class AddColumn(_OpBase):
 
     def to_ddl(self) -> str:
         parts = [
-            f"ALTER TABLE {qualify(self.schema, self.table)} ADD COLUMN",
+            f"ALTER TABLE {qualify(self.schema, self.table)} ADD COLUMN IF NOT EXISTS",
             f'"{self.column}"',
             self.type,
         ]
@@ -260,7 +259,7 @@ class DropColumn(_OpBase):
     def to_ddl(self) -> str:
         return (
             f"ALTER TABLE {qualify(self.schema, self.table)} "
-            f'DROP COLUMN "{self.column}"'
+            f'DROP COLUMN IF EXISTS "{self.column}"'
         )
 
     def to_source(self, indent: str) -> str:
@@ -497,7 +496,7 @@ class AddConstraint(_OpBase):
         return (
             "DO $$ BEGIN "
             f"{body} "
-            "EXCEPTION WHEN duplicate_object THEN NULL; END $$"
+            "EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$"
         )
 
     def to_source(self, indent: str) -> str:
@@ -733,7 +732,7 @@ class RunPython(_OpBase):
     """Data-only escape hatch: run an async Python function at apply time.
 
     `apply(state)` is a no-op. The runner awaits ``fn(conn)`` where ``conn``
-    is the norm ``AsyncConnection`` wrapper. ``reverse_fn``, if provided, is
+    is a ``Driver`` instance. ``reverse_fn``, if provided, is
     awaited on rollback.
     """
 

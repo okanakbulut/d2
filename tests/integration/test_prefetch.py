@@ -5,39 +5,40 @@ from typing import Any
 import msgspec
 import pytest
 
+from norm import db
 from norm import AsyncConnection, Table, PrimaryKey, Field, TableMeta, field
 
 
 class PfUsers(Table):
     __meta__ = TableMeta(table="pf_users", schema="public")
-    id:   PrimaryKey[int] = field(db_default=True)
+    id:   PrimaryKey[int] = field(default=db.serial())
     name: Field[str]
 
 
 class PfPosts(Table):
     __meta__ = TableMeta(table="pf_posts", schema="public")
-    id:      PrimaryKey[int] = field(db_default=True)
+    id:      PrimaryKey[int] = field(default=db.serial())
     user_id: Field[int]
     title:   Field[str]
 
 
 class PfComments(Table):
     __meta__ = TableMeta(table="pf_comments", schema="public")
-    id:      PrimaryKey[int] = field(db_default=True)
+    id:      PrimaryKey[int] = field(default=db.serial())
     post_id: Field[int]
     body:    Field[str]
 
 
 class PfProfiles(Table):
     __meta__ = TableMeta(table="pf_profiles", schema="public")
-    id:      PrimaryKey[int] = field(db_default=True)
+    id:      PrimaryKey[int] = field(default=db.serial())
     user_id: Field[int]
     bio:     Field[str]
 
 
 class PfScores(Table):
     __meta__ = TableMeta(table="pf_scores", schema="public")
-    id:       PrimaryKey[int] = field(db_default=True)
+    id:       PrimaryKey[int] = field(default=db.serial())
     user_id:  Field[int]
     category: Field[str]
     value:    Field[int]

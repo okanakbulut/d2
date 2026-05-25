@@ -2,11 +2,12 @@
 
 
 from pathlib import Path
-from typing import ClassVar, cast
+from typing import ClassVar
 
 import pytest
 
-from norm.connection import AsyncConnection
+from typing import Any
+
 from norm.migrations import Migration
 from norm.migrations.operations import CreateIndex, Operation
 from norm.migrations.runner import MigrationRunner
@@ -41,13 +42,13 @@ class _StubConn:
     def __init__(self, raw: _StubRaw) -> None:
         self._conn = raw
 
-    async def raw_execute(self, sql: str, *args: object) -> None:
+    async def execute(self, sql: str, *args: object) -> list[Any]:
+        if sql.strip().upper().startswith("SELECT"):
+            return list(await self._conn.fetch(sql, *args))
         await self._conn.execute(sql, *args)
+        return []
 
-    async def raw_fetch(self, sql: str, *args: object) -> list[dict[str, str]]:
-        return await self._conn.fetch(sql, *args)
-
-    def raw_transaction(self) -> _StubRaw:
+    def transaction(self) -> _StubRaw:
         return self._conn.transaction()
 
 
@@ -71,7 +72,7 @@ async def test_non_atomic_migration_is_not_wrapped_in_transaction(
 ) -> None:
     raw = _StubRaw()
     runner = MigrationRunner(
-        conn=cast(AsyncConnection, _StubConn(raw)), migrations_dir=str(tmp_path)
+        conn=_StubConn(raw), migrations_dir=str(tmp_path)
     )
 
     # Bypass file discovery by patching _discover.
@@ -105,7 +106,7 @@ async def test_concurrently_failure_prints_recovery_and_reraises(
 ) -> None:
     raw = _StubRaw(fail_on="CREATE INDEX CONCURRENTLY")
     runner = MigrationRunner(
-        conn=cast(AsyncConnection, _StubConn(raw)), migrations_dir=str(tmp_path)
+        conn=_StubConn(raw), migrations_dir=str(tmp_path)
     )
 
     monkeypatch.setattr(

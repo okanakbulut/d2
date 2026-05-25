@@ -6,110 +6,67 @@ import pytest
 
 from norm.migrations.snapshot import models_to_schema_state
 from norm.migrations.state import ForeignKeyConstraint
-from norm.model import ForeignKey, TableMeta, field
-from norm.schema import Field, PrimaryKey, Table
-
-
-class TestForeignKeyDataclass:
-    def test_foreign_key_fields_with_string_target(self):
-        fk = ForeignKey(to="public.organizations.id", on_delete="CASCADE")
-        assert fk.to == "public.organizations.id"
-        assert fk.on_delete == "CASCADE"
-        assert fk.on_update is None
-        assert fk.name is None
-
-    def test_foreign_key_defaults(self):
-        fk = ForeignKey(to="organizations.id")
-        assert fk.to == "organizations.id"
-        assert fk.on_delete is None
-        assert fk.on_update is None
-        assert fk.name is None
+from norm.model import field
+from norm.schema import ForeignKey, PrimaryKey, Table
+from norm import db
 
 
 class FkOrg(Table):
-    id: PrimaryKey[int] = field(db_default=True)
+    id: PrimaryKey[int] = field(default=db.serial())
 
 
 class FkUser(Table):
-    id: PrimaryKey[int] = field(db_default=True)
-    org_id: Field[int] = field(fk=ForeignKey(to=FkOrg.id, on_delete="CASCADE"))
+    id: PrimaryKey[int] = field(default=db.serial())
+    org_id: ForeignKey[FkOrg] = field(on_delete=db.CASCADE)
 
 
 class FkPost(Table):
-    id: PrimaryKey[int] = field(db_default=True)
-    author_id: Field[int] = field(
-        fk=ForeignKey(to="public.fk_user.id", on_delete="SET NULL", on_update="CASCADE"),
-    )
+    id: PrimaryKey[int] = field(default=db.serial())
+    author_id: ForeignKey[FkUser] = field(on_delete=db.SET_NULL, on_update=db.CASCADE)
 
 
 class FkAuthor(Table):
-    id: PrimaryKey[int] = field(db_default=True)
-    org_id: Field[int] = field(fk=ForeignKey(to="fk_org.id"))
-
-
-class FkMember(Table):
-    """Table-level FK declared via TableMeta.foreign_keys."""
-
-    __meta__ = TableMeta(
-        foreign_keys=(
-            ForeignKey(to=FkOrg.id, columns=("org_id",), on_delete="CASCADE"),
-        ),
-    )
-    id: PrimaryKey[int] = field(db_default=True)
-    org_id: Field[int]
+    id: PrimaryKey[int] = field(default=db.serial())
+    org_id: ForeignKey[FkOrg] = field()
 
 
 class TestSnapshotForeignKeys:
-    def test_inline_fk_with_field_proxy_target_produces_constraint(self):
+    def test_inline_fk_with_model_target_produces_constraint(self):
         state = models_to_schema_state([FkOrg, FkUser])
-        assert state.tables["fk_user"].constraints == [
+        assert state.tables["fk_users"].constraints == [
             ForeignKeyConstraint(
-                name="fk_user_org_id_fkey",
+                name="fk_users_org_id_fkey",
                 columns=("org_id",),
                 references_schema="public",
-                references_table="fk_org",
+                references_table="fk_orgs",
                 references_column="id",
                 on_delete="CASCADE",
                 on_update=None,
             )
         ]
 
-    def test_inline_fk_with_qualified_string_target(self):
-        state = models_to_schema_state([FkPost])
-        assert state.tables["fk_post"].constraints == [
+    def test_fk_with_on_delete_and_on_update(self):
+        state = models_to_schema_state([FkOrg, FkUser, FkPost])
+        assert state.tables["fk_posts"].constraints == [
             ForeignKeyConstraint(
-                name="fk_post_author_id_fkey",
+                name="fk_posts_author_id_fkey",
                 columns=("author_id",),
                 references_schema="public",
-                references_table="fk_user",
+                references_table="fk_users",
                 references_column="id",
                 on_delete="SET NULL",
                 on_update="CASCADE",
             )
         ]
 
-    def test_table_meta_fk_produces_same_constraint_as_inline(self):
-        state = models_to_schema_state([FkMember])
-        assert state.tables["fk_member"].constraints == [
+    def test_fk_without_on_delete_produces_constraint_with_no_action(self):
+        state = models_to_schema_state([FkOrg, FkAuthor])
+        assert state.tables["fk_authors"].constraints == [
             ForeignKeyConstraint(
-                name="fk_member_org_id_fkey",
+                name="fk_authors_org_id_fkey",
                 columns=("org_id",),
                 references_schema="public",
-                references_table="fk_org",
-                references_column="id",
-                on_delete="CASCADE",
-                on_update=None,
-            )
-        ]
-
-    def test_inline_fk_with_bare_string_target(self):
-        state = models_to_schema_state([FkAuthor])
-        assert state.tables["fk_author"].constraints == [
-            ForeignKeyConstraint(
-                name="fk_author_org_id_fkey",
-                columns=("org_id",),
-                references_schema=None,
-                references_table="fk_org",
+                references_table="fk_orgs",
                 references_column="id",
                 on_delete=None,
                 on_update=None,
@@ -141,7 +98,7 @@ class TestAddConstraintForeignKeyDDL:
             'ADD CONSTRAINT "users_org_id_fkey" FOREIGN KEY ("org_id") '
             'REFERENCES "public"."organizations" ("id") '
             'ON DELETE CASCADE ON UPDATE RESTRICT; '
-            'EXCEPTION WHEN duplicate_object THEN NULL; END $$'
+            'EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$'
         )
         assert op.to_ddl() == expected
 
@@ -166,7 +123,7 @@ class TestAddConstraintForeignKeyDDL:
             'ALTER TABLE "users" '
             'ADD CONSTRAINT "users_org_id_fkey" FOREIGN KEY ("org_id") '
             'REFERENCES "organizations" ("id"); '
-            'EXCEPTION WHEN duplicate_object THEN NULL; END $$'
+            'EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$'
         )
         assert op.to_ddl() == expected
 
@@ -318,9 +275,7 @@ class TestDiffForeignKeyDeferredOrdering:
 
         current = SchemaState()
         target = SchemaState()
-        # 'a_tbl' has a unique constraint (non-FK — should stay attached)
         unique = UniqueConstraint(name="a_tbl_x_key", columns=("x",))
-        # 'a_tbl' also has a FK
         fk_a = ForeignKeyConstraint(
             name="a_tbl_y_fkey",
             columns=("y",),

@@ -4,6 +4,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
+from norm import db
 from norm.migrations.snapshot import models_to_schema_state
 from norm.model import TableMeta, field
 from norm.schema import Field, PrimaryKey, Table, View
@@ -16,8 +17,8 @@ class TestModelsToSchemaState:
 
         state = models_to_schema_state([SnapWidget])
 
-        assert list(state.tables.keys()) == ["snap_widget"]
-        t = state.tables["snap_widget"]
+        assert list(state.tables.keys()) == ["snap_widgets"]
+        t = state.tables["snap_widgets"]
         assert list(t.columns.keys()) == ["label"]
         col = t.columns["label"]
         assert col.type == "TEXT"
@@ -27,10 +28,10 @@ class TestModelsToSchemaState:
 
     def test_bigserial_for_pk_with_db_default(self):
         class SnapOrder(Table):
-            id: PrimaryKey[int] = field(db_default=True)
+            id: PrimaryKey[int] = field(default=db.serial())
 
         state = models_to_schema_state([SnapOrder])
-        col = state.tables["snap_order"].columns["id"]
+        col = state.tables["snap_orders"].columns["id"]
         # Per ADR-0004, state stores BIGINT + has_sequence_default
         assert col.type == "BIGINT"
         assert col.primary_key is True
@@ -41,7 +42,7 @@ class TestModelsToSchemaState:
         class SnapCounter(Table):
             n: Field[int]
 
-        col = models_to_schema_state([SnapCounter]).tables["snap_counter"].columns["n"]
+        col = models_to_schema_state([SnapCounter]).tables["snap_counters"].columns["n"]
         assert col.type == "BIGINT"
         assert col.has_sequence_default is False
 
@@ -59,7 +60,7 @@ class TestModelsToSchemaState:
             j_list: Field[list[object]]
             blob: Field[bytes]
 
-        cols = models_to_schema_state([SnapKitchenSink]).tables["snap_kitchen_sink"].columns
+        cols = models_to_schema_state([SnapKitchenSink]).tables["snap_kitchen_sinks"].columns
         assert cols["i"].type == "BIGINT"
         assert cols["s"].type == "TEXT"
         assert cols["f"].type == "DOUBLE PRECISION"
@@ -76,7 +77,7 @@ class TestModelsToSchemaState:
         class SnapMaybe(Table):
             name: Field[str | None]
 
-        col = models_to_schema_state([SnapMaybe]).tables["snap_maybe"].columns["name"]
+        col = models_to_schema_state([SnapMaybe]).tables["snap_maybes"].columns["name"]
         assert col.type == "TEXT"
         assert col.nullable is True
 

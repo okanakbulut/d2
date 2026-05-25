@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from norm import AsyncConnection
+from norm import AsyncpgDriver
 from norm.migrations.runner import MigrationRunner
 
 
@@ -50,7 +50,7 @@ async def test_runner_applies_pending_creates_table_and_records_migration(
 
     (tmp_path / "0001_initial.py").write_text(MIGRATION_0001)
 
-    conn = AsyncConnection(pg_conn)
+    conn = AsyncpgDriver(pg_conn)
     runner = MigrationRunner(conn=conn, migrations_dir=str(tmp_path))
 
     pending_before = await runner.pending()

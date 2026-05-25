@@ -29,21 +29,14 @@ from .state import (
 # These are static-only (not runtime_checkable) so there's zero runtime cost.
 # ---------------------------------------------------------------------------
 
-class _FKDef(Protocol):
-    to: Any
-    columns: tuple[str, ...] | None
-    name: str | None
-    on_delete: str | None
-    on_update: str | None
-
-
 class _FieldDef(Protocol):
-    primary_key: bool
-    db_default: bool
+    default: Any  # DbExpr | None
     nullable: bool
     unique: bool
     index: bool
-    fk: _FKDef | None
+    references: type | None
+    on_delete: Any  # ReferentialAction | None
+    on_update: Any  # ReferentialAction | None
 
 
 class _FieldProxy(Protocol):
@@ -62,7 +55,6 @@ class _IndexDef(Protocol):
 class _TableMeta(Protocol):
     extensions: tuple[str, ...]
     schema: str | None
-    foreign_keys: tuple[_FKDef, ...]
     indexes: tuple[_IndexDef, ...]
 
 
@@ -102,29 +94,31 @@ def sql_type_for(python_type: Any) -> str:
 
 
 def column_spec_for_field(field: _FieldProxy) -> ColumnState:
+    from norm.db import _SerialExpr
+    from norm.schema import PrimaryKey
+
     fd: _FieldDef = field.field_def
-    if fd.primary_key and fd.db_default and field.python_type is int:
+    is_pk = isinstance(field, PrimaryKey)
+    if isinstance(fd.default, _SerialExpr):
         # ColumnState.__post_init__ normalizes BIGSERIAL → BIGINT + has_sequence_default=True
-        return ColumnState(type="BIGSERIAL", nullable=False, primary_key=True)
+        return ColumnState(type="BIGSERIAL", nullable=False, primary_key=is_pk)
     sql_type = sql_type_for(field.python_type)
+    default = fd.default.sql if fd.default is not None else None
     return ColumnState(
         type=sql_type,
         nullable=fd.nullable,
-        primary_key=fd.primary_key,
+        primary_key=is_pk,
+        default=default,
     )
 
 
 def resolve_fk_target(target: Any) -> tuple[str | None, str, str]:
-    """Resolve a `ForeignKey.to` value into (schema, table, column).
+    """Resolve a referenced Table subclass into (schema, table, pk_column)."""
+    from norm.schema import Table  # local import to avoid cycles
 
-    Accepts either a `Field` proxy (uses its `pika_field.table`) or a string
-    of the form `"schema.table.column"` or `"table.column"`.
-    """
-    from norm.schema import Field  # local import to avoid cycles
-
-    if isinstance(target, Field):
-        pika_field = target.pika_field
-        pika_table = cast(pypika.Table, pika_field.table)
+    if isinstance(target, type) and issubclass(target, Table):
+        norm_table = cast(_NormTable, target)
+        pika_table = cast(pypika.Table, norm_table.__table__)
         ref_table: str = pika_table.get_table_name()
         schema_obj: Any = getattr(pika_table, "_schema", None)
         ref_schema: str | None = (
@@ -132,45 +126,31 @@ def resolve_fk_target(target: Any) -> tuple[str | None, str, str]:
             if schema_obj
             else None
         )
-        return ref_schema, ref_table, target.column_name
-
-    if isinstance(target, str):
-        parts = target.split(".")
-        if len(parts) == 3:
-            return parts[0], parts[1], parts[2]
-        if len(parts) == 2:
-            return None, parts[0], parts[1]
-        raise ValueError(
-            f"foreign-key string target must be 'schema.table.column' or "
-            f"'table.column'; got {target!r}"
-        )
+        from norm.schema import PrimaryKey
+        pk_proxy = next(f for f in norm_table.__fields__ if isinstance(f, PrimaryKey))
+        return ref_schema, ref_table, pk_proxy.column_name
 
     raise TypeError(
-        f"ForeignKey.to must be a Field proxy or string; got {type(target).__name__}"
+        f"ForeignKey target must be a Table subclass; got {type(target).__name__}"
     )
 
 
 def fk_constraint(
     *,
     table: str,
-    fk: _FKDef,
-    columns: tuple[str, ...] | None = None,
+    column: str,
+    fd: _FieldDef,
 ) -> ForeignKeyConstraint:
-    ref_schema, ref_table, ref_column = resolve_fk_target(fk.to)
-    cols: tuple[str, ...] | None = columns if columns is not None else fk.columns
-    if cols is None:
-        raise ValueError(
-            "ForeignKey declared on TableMeta must specify columns=(...,)"
-        )
-    name = fk.name or auto_fk_name(table, cols)
+    ref_schema, ref_table, ref_column = resolve_fk_target(fd.references)
+    name = auto_fk_name(table, (column,))
     return ForeignKeyConstraint(
         name=name,
-        columns=tuple(cols),
+        columns=(column,),
         references_schema=ref_schema,
         references_table=ref_table,
         references_column=ref_column,
-        on_delete=fk.on_delete,
-        on_update=fk.on_update,
+        on_delete=fd.on_delete,
+        on_update=fd.on_update,
     )
 
 
@@ -286,9 +266,9 @@ def models_to_schema_state(models: list[type]) -> SchemaState:
                         method=None,
                     )
                 )
-            if fd.fk is not None:
+            if fd.references is not None:
                 table_state.constraints.append(
-                    fk_constraint(table=table_name, fk=fd.fk, columns=(col,))
+                    fk_constraint(table=table_name, column=col, fd=fd)
                 )
 
         raw_meta: Any = getattr(cls, "__meta__", None)
@@ -296,13 +276,8 @@ def models_to_schema_state(models: list[type]) -> SchemaState:
             meta = cast(_TableMeta, raw_meta)
             for ext in meta.extensions or ():
                 state.extensions.add(ext)
-            meta_schema: str | None = meta.schema
-            if meta_schema is not None and meta_schema != "public":
-                state.schemas.add(meta_schema)
-            for fk in meta.foreign_keys or ():
-                table_state.constraints.append(
-                    fk_constraint(table=table_name, fk=fk)
-                )
+            if schema_str and schema_str != "public":
+                state.schemas.add(schema_str)
             for idx in meta.indexes or ():
                 cols: tuple[str, ...] = tuple(idx.columns)
                 idx_name: str = idx.name or (

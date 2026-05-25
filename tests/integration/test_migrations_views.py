@@ -13,11 +13,12 @@ import pytest
 MODELS_V1 = '''
 from norm.schema import Table, Field, PrimaryKey, View
 from norm.model import field, TableMeta
+from norm import db
 
 
 class ViewUsers(Table):
     __meta__ = TableMeta(table="norm_view_users", schema="public")
-    id: PrimaryKey[int] = field(db_default=True)
+    id: PrimaryKey[int] = field(default=db.serial())
     email: Field[str]
     deleted: Field[bool]
 
@@ -35,11 +36,12 @@ class ActiveViewUsers(View, query=_active):
 MODELS_V2 = '''
 from norm.schema import Table, Field, PrimaryKey, View
 from norm.model import field, TableMeta
+from norm import db
 
 
 class ViewUsers(Table):
     __meta__ = TableMeta(table="norm_view_users", schema="public")
-    id: PrimaryKey[int] = field(db_default=True)
+    id: PrimaryKey[int] = field(default=db.serial())
     email: Field[str]
     deleted: Field[bool]
 

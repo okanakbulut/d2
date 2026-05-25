@@ -14,6 +14,7 @@ import pytest
 MODELS = '''
 from norm.schema import Table, Field, PrimaryKey
 from norm.model import field, IndexDef, TableMeta
+from norm import db
 
 
 class CIWidget(Table):
@@ -22,7 +23,7 @@ class CIWidget(Table):
         schema="public",
         indexes=(IndexDef(columns=("score",), name="idx_norm_ci_widgets_score"),),
     )
-    id: PrimaryKey[int] = field(db_default=True)
+    id: PrimaryKey[int] = field(default=db.serial())
     email: Field[str] = field(unique=True)
     score: Field[int]
 '''

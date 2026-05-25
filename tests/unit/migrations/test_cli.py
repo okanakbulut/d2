@@ -14,11 +14,12 @@ def _write_models(tmp_path: Path, source: str) -> None:
 
 
 MODEL_SIMPLE = """
+from norm import db
 from norm.schema import Table, Field, PrimaryKey
 from norm.model import field
 
 class CliWidget(Table):
-    id: PrimaryKey[int] = field(db_default=True)
+    id: PrimaryKey[int] = field(default=db.serial())
     label: Field[str]
 """
 
@@ -56,7 +57,7 @@ class TestCmdMake:
         assert rc == 0
         files = list((tmp_path / "migrations").glob("*.py"))
         assert len(files) == 1
-        assert files[0].name == "0001_create_cli_widget.py"
+        assert files[0].name == "0001_create_cli_widgets.py"
 
 
 class TestCmdCheck:

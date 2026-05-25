@@ -2,44 +2,41 @@
 from dataclasses import dataclass
 from typing import Any
 
+from .db import DbExpr, ReferentialAction
 
-@dataclass(frozen=True)
-class ForeignKey:
-    """A foreign-key constraint declaration.
-
-    `to` accepts either a `Field` proxy (refactor-safe, type-checked) or a
-    `"schema.table.column"` / `"table.column"` string (for forward refs or
-    tables outside norm).
-    """
-
-    to: Any
-    on_delete: str | None = None
-    on_update: str | None = None
-    name: str | None = None
-    columns: tuple[str, ...] | None = None
+# Sentinel: "infer schema from module path" — the default when schema is not explicit.
+# schema=None means "no schema prefix" (public); schema=_INFER means "derive from module".
+_INFER: Any = object()
 
 
 @dataclass(frozen=True)
 class FieldDef:
-    primary_key: bool = False
-    db_default: bool = False
+    default: DbExpr | None = None
     index: bool = False
     unique: bool = False
     name: str | None = None
     nullable: bool = False
-    fk: ForeignKey | None = None
+    references: type | None = None  # populated by _parse_fields for ForeignKey[Model]
+    on_delete: ReferentialAction | None = None
+    on_update: ReferentialAction | None = None
 
 
 def field(
     *,
-    db_default: bool = False,
+    default: DbExpr | None = None,
+    on_delete: ReferentialAction | None = None,
+    on_update: ReferentialAction | None = None,
     name: str | None = None,
     unique: bool = False,
     index: bool = False,
-    fk: ForeignKey | None = None,
 ) -> Any:
     return FieldDef(
-        db_default=db_default, name=name, unique=unique, index=index, fk=fk,
+        default=default,
+        on_delete=on_delete,
+        on_update=on_update,
+        name=name,
+        unique=unique,
+        index=index,
     )
 
 
@@ -54,7 +51,6 @@ class IndexDef:
 @dataclass(frozen=True)
 class TableMeta:
     table: str | None = None
-    schema: str | None = "public"
+    schema: str | None = _INFER  # type: ignore[assignment]  — None = no prefix; default = infer from module
     indexes: tuple[IndexDef, ...] = ()
-    foreign_keys: tuple[ForeignKey, ...] = ()
     extensions: tuple[str, ...] = ()

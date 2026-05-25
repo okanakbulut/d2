@@ -151,10 +151,10 @@ Set `atomic = False` when operations cannot run inside a transaction — for exa
 
 ```python
 >>> AddColumn(table="users", column="bio", type="TEXT", nullable=True, default=None, schema="public").to_ddl()
-'ALTER TABLE "public"."users" ADD COLUMN "bio" TEXT'
+'ALTER TABLE "public"."users" ADD COLUMN IF NOT EXISTS "bio" TEXT'
 
 >>> DropColumn(table="users", column="bio", schema="public").to_ddl()
-'ALTER TABLE "public"."users" DROP COLUMN "bio"'
+'ALTER TABLE "public"."users" DROP COLUMN IF EXISTS "bio"'
 
 >>> RenameColumn(table="users", old_name="bio", new_name="about", schema="public").to_ddl()
 'ALTER TABLE "public"."users" RENAME COLUMN "bio" TO "about"'
@@ -183,7 +183,7 @@ Set `atomic = False` when operations cannot run inside a transaction — for exa
 ...     table="users", schema="public",
 ...     constraint={"type": "unique", "name": "uq_users_email", "columns": ("email",)},
 ... ).to_ddl()
-'DO $$ BEGIN ALTER TABLE "public"."users" ADD CONSTRAINT "uq_users_email" UNIQUE ("email"); EXCEPTION WHEN duplicate_object THEN NULL; END $$'
+'DO $$ BEGIN ALTER TABLE "public"."users" ADD CONSTRAINT "uq_users_email" UNIQUE ("email"); EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$'
 
 >>> AddConstraint(
 ...     table="posts", schema="public",
@@ -198,7 +198,7 @@ Set `atomic = False` when operations cannot run inside a transaction — for exa
 ...         "on_update": None,
 ...     },
 ... ).to_ddl()
-'DO $$ BEGIN ALTER TABLE "public"."posts" ADD CONSTRAINT "fk_posts_user_id" FOREIGN KEY ("user_id") REFERENCES "public"."users" ("id") ON DELETE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$'
+'DO $$ BEGIN ALTER TABLE "public"."posts" ADD CONSTRAINT "fk_posts_user_id" FOREIGN KEY ("user_id") REFERENCES "public"."users" ("id") ON DELETE CASCADE; EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$'
 
 >>> DropConstraint(table="users", name="uq_users_email", schema="public").to_ddl()
 'ALTER TABLE "public"."users" DROP CONSTRAINT IF EXISTS "uq_users_email"'

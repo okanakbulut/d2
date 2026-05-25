@@ -24,9 +24,9 @@ Norm is a Python ORM for PostgreSQL. It provides:
 ## Quick example
 
 ```python
->>> from norm import Table, Field, PrimaryKey, Unique, field, TableMeta
+>>> from norm import Table, Field, PrimaryKey, Unique, field, TableMeta, db
 >>> class User(Table):
-...     id:    PrimaryKey[int] = field(db_default=True)
+...     id:    PrimaryKey[int] = field(default=db.serial())
 ...     name:  Field[str]
 ...     email: Unique[str]
 ...
@@ -38,6 +38,6 @@ Norm is a Python ORM for PostgreSQL. It provides:
 ...     .limit(10)
 ... )
 >>> q.build()
-('SELECT "user"."id","user"."name" FROM "public"."user" WHERE "user"."email" ILIKE $1 ORDER BY "user"."id" ASC LIMIT 10', ('%@example.com',))
+('SELECT "users"."id","users"."name" FROM "public"."users" WHERE "users"."email" ILIKE $1 ORDER BY "users"."id" ASC LIMIT 10', ('%@example.com',))
 
 ```

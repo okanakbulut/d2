@@ -22,17 +22,16 @@ Both keys have defaults (`./migrations` and `./models`) so the section is option
 ## Defining your first table
 
 ```python
->>> from norm import Table, Field, PrimaryKey, Unique, field, TableMeta
->>> from norm.model import ForeignKey
+>>> from norm import Table, Field, PrimaryKey, ForeignKey, Unique, field, TableMeta, db
 >>> class User(Table):
-...     id:       PrimaryKey[int] = field(db_default=True)
+...     id:       PrimaryKey[int] = field(default=db.serial())
 ...     username: Unique[str]
 ...     email:    Unique[str]
 ...     bio:      Field[str | None]
 ...
 >>> class Post(Table):
-...     id:      PrimaryKey[int] = field(db_default=True)
-...     user_id: Field[int] = field(fk=ForeignKey(to=User.id, on_delete="CASCADE"))
+...     id:      PrimaryKey[int] = field(default=db.serial())
+...     user_id: ForeignKey[User] = field(on_delete=db.CASCADE)
 ...     title:   Field[str]
 ...     body:    Field[str | None]
 ...
@@ -42,7 +41,7 @@ Both keys have defaults (`./migrations` and `./models`) so the section is option
 Key points:
 - Subclass `Table` for read-write tables, `View` for read-only.
 - Use `PrimaryKey[T]`, `Unique[T]`, `Field[T]` annotations to declare columns.
-- `field(db_default=True)` marks columns the database fills in (SERIAL, DEFAULT, etc.) — norm skips them in INSERT by default.
+- `field(default=db.serial())` marks serial primary key columns — norm skips them in INSERT by default.
 - `Field[str | None]` marks a column as nullable.
 - `TableMeta` sets schema, table name overrides, composite indexes, and extensions.
 
@@ -56,7 +55,7 @@ Key points:
 ...     .build()
 ... )
 >>> sql
-'SELECT "user"."id","user"."username" FROM "public"."user" WHERE "user"."id">$1'
+'SELECT "users"."id","users"."username" FROM "public"."users" WHERE "users"."id">$1'
 >>> params
 (0,)
 

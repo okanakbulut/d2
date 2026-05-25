@@ -57,9 +57,9 @@ Norm discovers `Table` and `View` subclasses through a global registry (`MODEL_R
 
 ```python
 >>> from norm.migrations.registry import MODEL_REGISTRY
->>> from norm import Table, Field, PrimaryKey, field
+>>> from norm import Table, Field, PrimaryKey, field, db
 >>> class Widget(Table):
-...     id:   PrimaryKey[int] = field(db_default=True)
+...     id:   PrimaryKey[int] = field(default=db.serial())
 ...     name: Field[str]
 ...
 >>> any("Widget" in key for key in MODEL_REGISTRY)
@@ -98,14 +98,14 @@ The `Dialect` protocol controls how parameterised placeholders are rendered. The
 
 ```python
 >>> from norm.dialect import PostgresDialect
->>> from norm import Table, Field, PrimaryKey, field, TableMeta
+>>> from norm import Table, Field, PrimaryKey, field, TableMeta, db
 >>> class MyTable(Table):
 ...     __meta__ = TableMeta(schema="public")
-...     id:   PrimaryKey[int] = field(db_default=True)
+...     id:   PrimaryKey[int] = field(default=db.serial())
 ...     name: Field[str]
 ...
 >>> MyTable.select(MyTable.id).build(PostgresDialect())
-('SELECT "my_table"."id" FROM "public"."my_table"', ())
+('SELECT "my_tables"."id" FROM "public"."my_tables"', ())
 
 ```
 

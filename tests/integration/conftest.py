@@ -5,6 +5,7 @@ import os, typing
 import pytest, msgspec, asyncpg
 
 
+from norm import db
 from norm import TableMeta, Table, PrimaryKey, Unique, Field, field
 
 PG_DSN = os.getenv("NORM_TEST_DSN", "postgresql://norm:norm@localhost:5432/norm_test")
@@ -19,7 +20,7 @@ async def pg_conn() -> typing.AsyncGenerator[asyncpg.Connection, None]:
 
 class Accounts(Table):
     __meta__ = TableMeta(table="accounts", schema="public")
-    id:    PrimaryKey[int] = field(db_default=True)
+    id:    PrimaryKey[int] = field(default=db.serial())
     name:  Field[str]
     email: Unique[str]
     score: Field[int]
@@ -39,6 +40,6 @@ class AccountSummary(msgspec.Struct):
 
 class TxnAccounts(Table):
     __meta__ = TableMeta(table="txn_accounts", schema="public")
-    id:    PrimaryKey[int] = field(db_default=True)
+    id:    PrimaryKey[int] = field(default=db.serial())
     name:  Field[str]
     email: Unique[str]

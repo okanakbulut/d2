@@ -23,7 +23,7 @@ class TestSnapshotView:
         state = models_to_schema_state([UsersForView, ActiveUsersView])
         expected_sql, _ = _users_query.build()
         assert state.views == {
-            "active_users_view": ViewState(
+            "active_users_views": ViewState(
                 definition=expected_sql,
                 columns=(("id", int), ("email", str)),
                 schema="public",

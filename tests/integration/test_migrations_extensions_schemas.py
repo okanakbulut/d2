@@ -18,6 +18,7 @@ import pytest
 MODELS_SOURCE = '''
 from norm.schema import Table, Field, PrimaryKey
 from norm.model import field, TableMeta
+from norm import db
 
 
 class IssueOneFourSixEvent(Table):
@@ -26,7 +27,7 @@ class IssueOneFourSixEvent(Table):
         schema="audit_146",
         extensions=("pgcrypto",),
     )
-    id: PrimaryKey[int] = field(db_default=True)
+    id: PrimaryKey[int] = field(default=db.serial())
     label: Field[str]
 '''
 

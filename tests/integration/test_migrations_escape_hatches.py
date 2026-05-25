@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from norm import AsyncConnection
+from norm import AsyncpgDriver
 from norm.migrations.runner import MigrationRunner
 
 
@@ -73,7 +73,7 @@ async def test_run_python_apply_runs_fn_and_rollback_runs_reverse(
     (tmp_path / "0001_create.py").write_text(MIGRATION_CREATE)
     (tmp_path / "0002_backfill.py").write_text(MIGRATION_BACKFILL)
 
-    conn = AsyncConnection(pg_conn)
+    conn = AsyncpgDriver(pg_conn)
     runner = MigrationRunner(conn=conn, migrations_dir=str(tmp_path))
     applied = await runner.apply()
     assert applied == ["0001_create", "0002_backfill"]
@@ -134,7 +134,7 @@ async def test_run_sql_splits_statements_and_rollback_runs_reverse_sql(
     (tmp_path / "0001_create.py").write_text(MIGRATION_CREATE)
     (tmp_path / "0002_seed.py").write_text(MIGRATION_RUNSQL_SEED)
 
-    conn = AsyncConnection(pg_conn)
+    conn = AsyncpgDriver(pg_conn)
     runner = MigrationRunner(conn=conn, migrations_dir=str(tmp_path))
     await runner.apply()
 

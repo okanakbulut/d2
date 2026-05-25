@@ -6,7 +6,6 @@ from typing import Any, ClassVar
 
 import pytest
 
-from norm.connection import AsyncConnection
 from norm.migrations import Migration
 from norm.migrations.operations import Operation, RunPython, RunSQL
 from norm.migrations.runner import MigrationRunner
@@ -43,11 +42,18 @@ class _StubRaw:
         return None
 
 
-class _StubConn(AsyncConnection):
-    def __init__(self, raw: _StubRaw) -> None:  # noqa: D401 — intentional override
-        # Skip AsyncConnection.__init__ to avoid pulling in dialect machinery;
-        # tests only exercise the raw_* methods which read ``self._conn``.
+class _StubConn:
+    def __init__(self, raw: _StubRaw) -> None:
         self._conn = raw
+
+    async def execute(self, sql: str, *args: object) -> list[Any]:
+        if sql.strip().upper().startswith("SELECT"):
+            return list(await self._conn.fetch(sql, *args))
+        await self._conn.execute(sql, *args)
+        return []
+
+    def transaction(self) -> _StubRaw:
+        return self._conn.transaction()
 
 
 def _runner_with(
@@ -82,7 +88,7 @@ class TestRunSQLApply:
 
 class TestRunPythonApply:
     def test_apply_does_not_mutate_schema_state(self):
-        async def _fn(conn: AsyncConnection) -> None:
+        async def _fn(conn: Any) -> None:
             return None
 
         state = SchemaState()
@@ -91,7 +97,7 @@ class TestRunPythonApply:
         assert state == SchemaState()
 
     def test_reverse_fn_defaults_to_none(self):
-        async def _fn(conn: AsyncConnection) -> None:
+        async def _fn(conn: Any) -> None:
             return None
 
         op = RunPython(fn=_fn)
@@ -157,7 +163,7 @@ class TestRunnerRunPythonDispatch:
     ) -> None:
         seen_conns: list[object] = []
 
-        async def _backfill(conn: AsyncConnection) -> None:
+        async def _backfill(conn: Any) -> None:
             seen_conns.append(conn)
 
         class _Mig(Migration):
@@ -236,10 +242,10 @@ class TestRollbackRunPython:
     ) -> None:
         seen_conns: list[object] = []
 
-        async def _fwd(conn: AsyncConnection) -> None:
+        async def _fwd(conn: Any) -> None:
             return None
 
-        async def _rev(conn: AsyncConnection) -> None:
+        async def _rev(conn: Any) -> None:
             seen_conns.append(conn)
 
         class _Mig(Migration):
@@ -265,7 +271,7 @@ class TestRollbackRunPython:
     async def test_rollback_raises_when_reverse_fn_missing(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        async def _fwd(conn: AsyncConnection) -> None:
+        async def _fwd(conn: Any) -> None:
             return None
 
         class _Mig(Migration):

@@ -13,11 +13,12 @@ import pytest
 MODELS_SOURCE = '''
 from norm.schema import Table, Field, PrimaryKey
 from norm.model import field, TableMeta
+from norm import db
 
 
 class CliIntWidget(Table):
     __meta__ = TableMeta(table="norm_cli_widgets", schema="public")
-    id: PrimaryKey[int] = field(db_default=True)
+    id: PrimaryKey[int] = field(default=db.serial())
     label: Field[str]
 '''
 

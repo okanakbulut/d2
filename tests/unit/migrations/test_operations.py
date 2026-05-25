@@ -95,7 +95,7 @@ def _make_state_with_table(columns: dict[str, ColumnState]) -> SchemaState:
 class TestAddColumn:
     def test_to_ddl_nullable_no_default(self):
         op = AddColumn(table="t", column="age", type="INTEGER", nullable=True, schema="public")
-        assert op.to_ddl() == 'ALTER TABLE "public"."t" ADD COLUMN "age" INTEGER'
+        assert op.to_ddl() == 'ALTER TABLE "public"."t" ADD COLUMN IF NOT EXISTS "age" INTEGER'
 
     def test_to_ddl_not_null_with_default(self):
         op = AddColumn(
@@ -108,12 +108,12 @@ class TestAddColumn:
         )
         assert (
             op.to_ddl()
-            == 'ALTER TABLE "public"."t" ADD COLUMN "status" TEXT NOT NULL DEFAULT \'active\''
+            == "ALTER TABLE \"public\".\"t\" ADD COLUMN IF NOT EXISTS \"status\" TEXT NOT NULL DEFAULT 'active'"
         )
 
     def test_to_ddl_no_schema(self):
         op = AddColumn(table="t", column="x", type="TEXT", nullable=True)
-        assert op.to_ddl() == 'ALTER TABLE "t" ADD COLUMN "x" TEXT'
+        assert op.to_ddl() == 'ALTER TABLE "t" ADD COLUMN IF NOT EXISTS "x" TEXT'
 
     def test_apply_adds_column_to_state(self):
         state = _make_state_with_table({"id": ColumnState(type="BIGINT", nullable=False)})
@@ -144,11 +144,11 @@ class TestDropColumn:
     def test_to_ddl_with_schema(self):
         assert (
             DropColumn(table="t", column="x", schema="public").to_ddl()
-            == 'ALTER TABLE "public"."t" DROP COLUMN "x"'
+            == 'ALTER TABLE "public"."t" DROP COLUMN IF EXISTS "x"'
         )
 
     def test_to_ddl_without_schema(self):
-        assert DropColumn(table="t", column="x").to_ddl() == 'ALTER TABLE "t" DROP COLUMN "x"'
+        assert DropColumn(table="t", column="x").to_ddl() == 'ALTER TABLE "t" DROP COLUMN IF EXISTS "x"'
 
     def test_apply_removes_column(self):
         state = _make_state_with_table({

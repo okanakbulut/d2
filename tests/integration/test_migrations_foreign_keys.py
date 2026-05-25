@@ -13,19 +13,19 @@ import pytest
 
 
 MODELS = '''
-from norm.schema import Table, Field, PrimaryKey
-from norm.model import field, ForeignKey
+from norm import Table, Field, ForeignKey, PrimaryKey, db, field
+from norm.model import TableMeta
 
 
 class NormFkOrg(Table):
-    id: PrimaryKey[int] = field(db_default=True)
+    __meta__ = TableMeta(table="norm_fk_org", schema="public")
+    id: PrimaryKey[int] = field(default=db.serial())
 
 
 class NormFkUser(Table):
-    id: PrimaryKey[int] = field(db_default=True)
-    org_id: Field[int] = field(
-        fk=ForeignKey(to=NormFkOrg.id, on_delete="CASCADE"),
-    )
+    __meta__ = TableMeta(table="norm_fk_user", schema="public")
+    id: PrimaryKey[int] = field(default=db.serial())
+    org_id: ForeignKey[NormFkOrg] = field(on_delete=db.CASCADE)
 '''
 
 

@@ -2,6 +2,7 @@
 
 import pytest
 
+from norm import db
 from norm import TableMeta, Field, PrimaryKey, Unique, Index, Table, View, field
 from .conftest import Users, UserModelExplicit
 
@@ -9,12 +10,12 @@ from .conftest import Users, UserModelExplicit
 class TestField:
     def test_defaults(self):
         fd = field()
-        assert fd.db_default is False
+        assert fd.default is None
         assert fd.name is None
 
     def test_db_default(self):
-        fd = field(db_default=True)
-        assert fd.db_default is True
+        fd = field(default=db.serial())
+        assert fd.default is not None
 
     def test_name_override(self):
         fd = field(name="user_name")
@@ -23,7 +24,7 @@ class TestField:
     def test_immutable(self):
         fd = field()
         with pytest.raises((AttributeError, TypeError)):
-            fd.db_default = True  # type: ignore[misc]
+            fd.default = db.serial()  # type: ignore[misc]
 
 
 class TestTableMeta:
@@ -35,7 +36,7 @@ class TestTableMeta:
     def test_defaults(self):
         meta = TableMeta()
         assert meta.table is None
-        assert meta.schema == "public"
+        assert meta.schema is not None  # sentinel: infer from module
 
     def test_immutable(self):
         meta = TableMeta(table="users")
@@ -45,10 +46,10 @@ class TestTableMeta:
 
 class TestFieldTypes:
     def test_primary_key_flag(self):
-        assert Users.id.field_def.primary_key is True
+        assert isinstance(Users.id, PrimaryKey)
 
     def test_primary_key_db_default(self):
-        assert Users.id.field_def.db_default is True
+        assert Users.id.field_def.default is not None
 
     def test_index_flag(self):
         assert Users.name.field_def.index is True
@@ -57,7 +58,7 @@ class TestFieldTypes:
         assert Users.email.field_def.unique is True
 
     def test_field_no_flags(self):
-        assert UserModelExplicit.name.field_def.primary_key is False
+        assert not isinstance(UserModelExplicit.name, PrimaryKey)
         assert UserModelExplicit.name.field_def.unique is False
         assert UserModelExplicit.name.field_def.index is False
 

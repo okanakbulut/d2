@@ -1,0 +1,6 @@
+from typing import Any, AsyncContextManager, Protocol
+
+
+class Driver(Protocol):
+    async def execute(self, query: str, *args: Any) -> list[Any]: ...
+    def transaction(self) -> AsyncContextManager[None]: ...

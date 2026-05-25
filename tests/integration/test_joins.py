@@ -6,12 +6,13 @@ from typing import Any
 import msgspec
 import pytest
 
+from norm import db
 from norm import AsyncConnection, TableMeta, Table, PrimaryKey, Field, field
 
 
 class Employees(Table):
     __meta__ = TableMeta(table="join_employees", schema="public")
-    id:         PrimaryKey[int] = field(db_default=True)
+    id:         PrimaryKey[int] = field(default=db.serial())
     name:       Field[str]
     manager_id: Field[int]
 

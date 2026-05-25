@@ -5,12 +5,13 @@ from typing import Any
 
 import pytest
 
+from norm import db
 from norm import AsyncConnection, Table, PrimaryKey, Unique, Field, TableMeta, field
 
 
 class JUsers(Table):
     __meta__ = TableMeta(table="j_users", schema="public")
-    id:    PrimaryKey[int] = field(db_default=True)
+    id:    PrimaryKey[int] = field(default=db.serial())
     name:  Field[str]
     email: Unique[str]
 

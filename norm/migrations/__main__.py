@@ -71,14 +71,14 @@ def cmd_check(*, cwd: Path, migrations_dir: str | None = None, models: str | Non
 async def cmd_apply(*, cwd: Path, dsn: str, migrations_dir: str | None = None, models: str | None = None) -> int:
     import asyncpg  # local import to keep CLI startup light
 
-    from norm.connection import AsyncConnection
+    from norm.connection import AsyncpgDriver
     from .runner import MigrationRunner
 
     cfg = load_config(cwd, migrations_dir_override=migrations_dir, models_override=models)
     asyncpg_any: Any = asyncpg
     raw: Any = await asyncpg_any.connect(dsn)
     try:
-        runner = MigrationRunner(conn=AsyncConnection(raw), migrations_dir=str(cfg.migrations_dir))
+        runner = MigrationRunner(conn=AsyncpgDriver(raw), migrations_dir=str(cfg.migrations_dir))
         applied = await runner.apply()
     finally:
         await raw.close()
@@ -100,14 +100,14 @@ async def cmd_rollback(
 ) -> int:
     import asyncpg  # local import to keep CLI startup light
 
-    from norm.connection import AsyncConnection
+    from norm.connection import AsyncpgDriver
     from .runner import MigrationRunner
 
     cfg = load_config(cwd, migrations_dir_override=migrations_dir, models_override=models)
     asyncpg_any: Any = asyncpg
     raw: Any = await asyncpg_any.connect(dsn)
     try:
-        runner = MigrationRunner(conn=AsyncConnection(raw), migrations_dir=str(cfg.migrations_dir))
+        runner = MigrationRunner(conn=AsyncpgDriver(raw), migrations_dir=str(cfg.migrations_dir))
         await runner.rollback(name, force=force)
     finally:
         await raw.close()

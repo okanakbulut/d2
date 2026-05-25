@@ -50,7 +50,7 @@ class TestAddConstraint:
             'DO $$ BEGIN '
             'ALTER TABLE "public"."users" '
             'ADD CONSTRAINT "users_email_key" UNIQUE ("email"); '
-            'EXCEPTION WHEN duplicate_object THEN NULL; END $$'
+            'EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$'
         )
         assert op.to_ddl() == expected
 
@@ -67,7 +67,7 @@ class TestAddConstraint:
             'DO $$ BEGIN '
             'ALTER TABLE "t" '
             'ADD CONSTRAINT "t_a_b_key" UNIQUE ("a", "b"); '
-            'EXCEPTION WHEN duplicate_object THEN NULL; END $$'
+            'EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$'
         )
         assert op.to_ddl() == expected
 
@@ -247,9 +247,9 @@ class TestSnapshotConstraintsAndIndexes:
             email: Field[str] = field(unique=True)
 
         state = models_to_schema_state([SnapUniqueUser])
-        t = state.tables["snap_unique_user"]
+        t = state.tables["snap_unique_users"]
         assert t.constraints == [
-            UniqueConstraint(name="snap_unique_user_email_key", columns=("email",))
+            UniqueConstraint(name="snap_unique_users_email_key", columns=("email",))
         ]
         assert t.indexes == []
 
@@ -262,10 +262,10 @@ class TestSnapshotConstraintsAndIndexes:
             email: Field[str] = field(index=True)
 
         state = models_to_schema_state([SnapIndexedUser])
-        t = state.tables["snap_indexed_user"]
+        t = state.tables["snap_indexed_users"]
         assert t.constraints == []
         assert t.indexes == [
-            IndexDef(name="idx_snap_indexed_user_email", columns=("email",), unique=False, method=None)
+            IndexDef(name="idx_snap_indexed_users_email", columns=("email",), unique=False, method=None)
         ]
 
     def test_table_meta_indexes_added_to_snapshot(self):
@@ -283,7 +283,7 @@ class TestSnapshotConstraintsAndIndexes:
             b: Field[str]
 
         state = models_to_schema_state([SnapEvent])
-        t = state.tables["snap_event"]
+        t = state.tables["snap_events"]
         assert t.indexes == [
             IndexDef(name="idx_snap_event_a_b", columns=("a", "b"), unique=False, method=None)
         ]

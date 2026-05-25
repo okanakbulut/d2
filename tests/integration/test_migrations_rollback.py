@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from norm import AsyncConnection
+from norm import AsyncpgDriver
 from norm.migrations.runner import MigrationRunner
 
 
@@ -87,7 +87,7 @@ async def test_rollback_second_migration_reverts_schema_and_tracking_row(
     (tmp_path / "0001_initial.py").write_text(MIGRATION_0001)
     (tmp_path / "0002_add_status.py").write_text(MIGRATION_0002)
 
-    conn = AsyncConnection(pg_conn)
+    conn = AsyncpgDriver(pg_conn)
     runner = MigrationRunner(conn=conn, migrations_dir=str(tmp_path))
     applied = await runner.apply()
     assert applied == ["0001_initial", "0002_add_status"]
@@ -114,7 +114,7 @@ async def test_rollback_non_most_recent_without_force_refuses(
     (tmp_path / "0001_initial.py").write_text(MIGRATION_0001)
     (tmp_path / "0002_add_status.py").write_text(MIGRATION_0002)
 
-    conn = AsyncConnection(pg_conn)
+    conn = AsyncpgDriver(pg_conn)
     runner = MigrationRunner(conn=conn, migrations_dir=str(tmp_path))
     await runner.apply()
 
@@ -157,7 +157,7 @@ async def test_cli_rollback_subcommand_dispatches(
     migrations_dir.mkdir()
     (migrations_dir / "0001_initial.py").write_text(MIGRATION_0001)
 
-    conn = AsyncConnection(pg_conn)
+    conn = AsyncpgDriver(pg_conn)
     runner = MigrationRunner(conn=conn, migrations_dir=str(migrations_dir))
     await runner.apply()
     assert await _table_exists(pg_conn, "public", "norm_rb_widgets")

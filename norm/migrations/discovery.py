@@ -48,10 +48,15 @@ def models_for(cfg: NormConfig) -> list[type]:
     for key in stale:
         del MODEL_REGISTRY[key]
 
+    before = set(MODEL_REGISTRY.keys())
     import_models_module(prefix)
 
-    return [
-        cls
-        for cls in MODEL_REGISTRY.values()
+    # Include models directly in the configured namespace AND models newly
+    # registered during the import. The latter supports "gateway" modules that
+    # just import from several sub-packages (e.g. all_models.py).
+    matching = {
+        key for key, cls in MODEL_REGISTRY.items()
         if cls.__module__ == prefix or cls.__module__.startswith(prefix + ".")
-    ]
+    }
+    newly_registered = set(MODEL_REGISTRY.keys()) - before
+    return [MODEL_REGISTRY[k] for k in matching | newly_registered if k in MODEL_REGISTRY]

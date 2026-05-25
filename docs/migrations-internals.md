@@ -148,16 +148,16 @@ Introspects `Table` / `View` class definitions and produces a `SchemaState`:
 
 ```python
 >>> from norm.migrations.snapshot import models_to_schema_state
->>> from norm import Table, Field, PrimaryKey, Unique, field, TableMeta
+>>> from norm import Table, Field, PrimaryKey, Unique, field, TableMeta, db
 >>> class UserM(Table):
 ...     __meta__ = TableMeta(schema="public")
-...     id:    PrimaryKey[int] = field(db_default=True)
+...     id:    PrimaryKey[int] = field(default=db.serial())
 ...     email: Unique[str]
 ...
 >>> state = models_to_schema_state([UserM])
->>> "user_m" in state.tables
+>>> "user_ms" in state.tables
 True
->>> state.tables["user_m"].columns["id"].has_sequence_default
+>>> state.tables["user_ms"].columns["id"].has_sequence_default
 True
 
 ```

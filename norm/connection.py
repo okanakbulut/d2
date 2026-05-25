@@ -1,4 +1,3 @@
-
 import json
 import typing
 from typing import Any, TypeVar, overload
@@ -6,10 +5,10 @@ from typing import Any, TypeVar, overload
 import msgspec
 
 from .dialect import Dialect, PostgresDialect
+from .driver import Driver
 
 T = TypeVar("T")
 
-# AnyQuery covers Entity clone types (with .build() classmethod) and the mutable query objects
 AnyQuery = Any
 
 
@@ -66,20 +65,33 @@ class AsyncConnection:
     def transaction(self) -> Any:
         return self._conn.transaction()
 
-    # --- Migration-runner accessors -------------------------------------------------
-    # These wrap raw asyncpg calls without going through the query builder; they are
-    # intended for the migration system (DDL + tracking-table maintenance) which
-    # needs to execute literal SQL strings against the underlying driver.
-
     async def raw_execute(self, sql: str, *args: Any) -> Any:
-        """Execute a raw SQL string against the underlying driver."""
         return await self._conn.execute(sql, *args)
 
     async def raw_fetch(self, sql: str, *args: Any) -> list[Any]:
-        """Run a raw SQL query and return the rows from the underlying driver."""
         rows: Any = await self._conn.fetch(sql, *args)
         return list(rows)
 
     def raw_transaction(self) -> Any:
-        """Return the underlying driver's transaction context manager."""
         return self._conn.transaction()
+
+
+class AsyncpgDriver:
+    """Implements Driver over a raw asyncpg connection.
+
+    execute() uses asyncpg.fetch so it returns rows for SELECT and an empty
+    list for DDL/DML — the migration runner ignores the return for non-SELECT.
+    """
+
+    def __init__(self, conn: Any) -> None:
+        self._conn = conn
+
+    async def execute(self, query: str, *args: Any) -> list[Any]:
+        rows: Any = await self._conn.fetch(query, *args)
+        return list(rows)
+
+    def transaction(self) -> Any:
+        return self._conn.transaction()
+
+
+_: type[Driver] = AsyncpgDriver  # static assert AsyncpgDriver satisfies Driver

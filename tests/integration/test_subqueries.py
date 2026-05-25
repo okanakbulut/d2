@@ -5,19 +5,20 @@ from typing import Any
 
 import msgspec, pytest
 
+from norm import db
 from norm import AsyncConnection, TableMeta, Table, PrimaryKey, Field, field
 
 
 class SubqOrders(Table):
     __meta__ = TableMeta(table="subq_orders", schema="public")
-    id:      PrimaryKey[int] = field(db_default=True)
+    id:      PrimaryKey[int] = field(default=db.serial())
     user_id: Field[int]
     amount:  Field[int]
 
 
 class SubqUsers(Table):
     __meta__ = TableMeta(table="subq_users", schema="public")
-    id:   PrimaryKey[int] = field(db_default=True)
+    id:   PrimaryKey[int] = field(default=db.serial())
     name: Field[str]
 
 

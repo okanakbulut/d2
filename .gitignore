@@ -12,3 +12,7 @@ wheels/
 # Coverage
 .coverage
 htmlcov/
+
+# Node (website/)
+node_modules/
+.astro/

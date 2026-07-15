@@ -1,4 +1,7 @@
-# Migrations
+---
+title: Migrations
+description: "CLI workflow, the Migration class, and all 22 operations."
+---
 
 Norm's migration system compares your Table definitions against the history of applied migrations to produce a diff, then generates versioned Python files you can review, commit, and apply.
 

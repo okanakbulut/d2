@@ -1,4 +1,7 @@
-# Connection
+---
+title: Connection
+description: "AsyncConnection, fetch / execute / fetchval, and transactions."
+---
 
 ## AsyncConnection
 

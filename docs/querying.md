@@ -1,4 +1,7 @@
-# Querying
+---
+title: Querying
+description: "SELECT, filters, joins, ordering, pagination, group by, and set operations."
+---
 
 All query-building methods return a **new cloned entity** — the original is never mutated. Chains are composed by calling methods in sequence.
 

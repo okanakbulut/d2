@@ -1,4 +1,7 @@
-# Schema
+---
+title: Schema
+description: "Table, View, field types, TableMeta, foreign keys, and indexes."
+---
 
 ## Table and View
 

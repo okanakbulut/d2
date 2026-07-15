@@ -1,6 +1,6 @@
 """Shared fixtures and models for integration tests."""
 
-import os, typing
+import os, pathlib, typing
 
 import pytest, msgspec, asyncpg
 
@@ -9,6 +9,14 @@ from norm import db
 from norm import TableMeta, Table, PrimaryKey, Unique, Field, field
 
 PG_DSN = os.getenv("NORM_TEST_DSN", "postgresql://norm:norm@localhost:5432/norm_test")
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Every test under tests/integration/ requires a running PostgreSQL."""
+    here = pathlib.Path(__file__).parent
+    for item in items:
+        if item.path.is_relative_to(here):
+            item.add_marker(pytest.mark.integration)
 
 
 @pytest.fixture(scope="session")

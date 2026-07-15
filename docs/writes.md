@@ -1,4 +1,7 @@
-# Writes
+---
+title: Writes
+description: "INSERT, UPDATE, DELETE, upsert, returning, and excluded()."
+---
 
 ```python
 >>> from norm import Table, Field, PrimaryKey, Unique, field, excluded, db

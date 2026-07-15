@@ -1,4 +1,7 @@
-# Getting Started
+---
+title: Getting Started
+description: "Installation, configuration, and your first table and query."
+---
 
 ## Installation
 

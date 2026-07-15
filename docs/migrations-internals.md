@@ -1,4 +1,7 @@
-# Migrations Internals
+---
+title: Migrations Internals
+description: "SchemaState, SchemaPipeline, MigrationRunner, codegen, and lint."
+---
 
 This page covers the underlying machinery. You generally interact with it only when building tooling on top of norm, writing custom diff logic, or running migrations programmatically.
 

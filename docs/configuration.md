@@ -1,4 +1,7 @@
-# Configuration
+---
+title: Configuration
+description: "The [tool.norm] pyproject.toml section, NormConfig, and model discovery."
+---
 
 ## pyproject.toml
 

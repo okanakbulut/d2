@@ -5,13 +5,22 @@ build-backend = "hatchling.build"
 [project]
 name = "norm"
 version = "0.1.0"
-description = "Add your description here"
+description = "Async-first PostgreSQL ORM with a composable query builder and integrated migrations"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.14"
 dependencies = [
     "asyncpg>=0.31.0",
+    "msgspec>=0.21.1",
     "pypika>=0.51.1",
 ]
+
+[project.urls]
+Homepage = "https://okanakbulut.github.io/norm/"
+Documentation = "https://okanakbulut.github.io/norm/"
+Repository = "https://github.com/okanakbulut/norm"
+Issues = "https://github.com/okanakbulut/norm/issues"
 
 [dependency-groups]
 dev = [
@@ -23,6 +32,7 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
+testpaths = ["norm", "docs", "tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 pythonpath = ["."]

@@ -1,4 +1,7 @@
-# Advanced Queries
+---
+title: Advanced Queries
+description: "CTEs, JSON output, prefetch, window functions, and scalar subqueries."
+---
 
 ```python
 >>> from norm import Table, Field, PrimaryKey, Unique, field, TableMeta, With, db

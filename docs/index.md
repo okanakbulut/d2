@@ -1,4 +1,7 @@
-# Norm Developer Guide
+---
+title: Norm Developer Guide
+description: "Async-first PostgreSQL ORM for Python — declarative schema, composable query builder, integrated migrations."
+---
 
 Norm is a Python ORM for PostgreSQL. It provides:
 

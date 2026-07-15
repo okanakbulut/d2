@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from norm import AsyncConnection, excluded
+from d2 import AsyncConnection, excluded
 from .conftest import Accounts, AccountResult
 
 

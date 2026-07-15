@@ -6,8 +6,8 @@ description: "Table, View, field types, TableMeta, foreign keys, and indexes."
 ## Table and View
 
 ```python
->>> from norm import Table, View, Field, PrimaryKey, ForeignKey, Unique, Index, field, TableMeta, db
->>> from norm.model import IndexDef
+>>> from d2 import Table, View, Field, PrimaryKey, ForeignKey, Unique, Index, field, TableMeta, db
+>>> from d2.model import IndexDef
 >>> class MyTable(Table):
 ...     id: PrimaryKey[int]
 ...
@@ -20,7 +20,7 @@ description: "Table, View, field types, TableMeta, foreign keys, and indexes."
 `Table` supports SELECT, INSERT, UPDATE, and DELETE.  
 `View` is read-only (SELECT only).
 
-Both use `NormMeta` as their metaclass, which on class creation:
+Both use `D2Meta` as their metaclass, which on class creation:
 1. Parses type annotations to build `Field` proxies
 2. Infers the table name from the class name (CamelCase → snake_case, strips trailing `Model`)
 3. Registers the class in the global model registry used by migrations
@@ -152,7 +152,7 @@ IndexDef(columns=('col_a', 'col_b'), name='idx_my_table_ab', unique=False, metho
 
 ## Table name inference
 
-Norm derives the table name from the class name automatically:
+d2 derives the table name from the class name automatically:
 
 | Class name | Inferred table name |
 |------------|---------------------|
@@ -164,7 +164,7 @@ Override with `TableMeta(table="my_name")`.
 
 ## Schema inference from module path
 
-If your models live in a package that contains `models` in the path, norm infers the schema from the parent package:
+If your models live in a package that contains `models` in the path, d2 infers the schema from the parent package:
 
 ```
 myapp/
@@ -178,7 +178,7 @@ Override with `TableMeta(schema="...")`.
 
 ## View with a query
 
-Views can be backed by a norm query using the `query=` class keyword:
+Views can be backed by a d2 query using the `query=` class keyword:
 
 ```python
 >>> class ActiveUser(View, query=(
@@ -191,4 +191,4 @@ Views can be backed by a norm query using the `query=` class keyword:
 
 ```
 
-Norm validates at class-creation time that the view's declared columns match the query's projected columns (name and type). This raises `TypeError` immediately if they diverge.
+d2 validates at class-creation time that the view's declared columns match the query's projected columns (name and type). This raises `TypeError` immediately if they diverge.

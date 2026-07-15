@@ -1,4 +1,4 @@
-"""Model registry — populated by `NormMeta.__new__` for declared models.
+"""Model registry — populated by `D2Meta.__new__` for declared models.
 
 The registry is keyed by `f"{cls.__module__}.{cls.__qualname__}"`. Only models
 that hit the `_setup_table` path register (i.e. those without a pre-supplied

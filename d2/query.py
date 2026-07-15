@@ -10,7 +10,7 @@ from .dialect import Dialect, PostgresDialect
 
 if TYPE_CHECKING:
     from .filter import Filter, AnyFilter
-    from .schema import Field as NormField, Selectable
+    from .schema import Field as D2Field, Selectable
 
 
 @dataclass(frozen=True)
@@ -18,10 +18,10 @@ class ConflictBuilder:
     """Intermediate/terminal builder produced by InsertQuery.on_conflict()."""
 
     insert: Any  # InsertQuery
-    targets: tuple[Any, ...]  # tuple[NormField, ...]
+    targets: tuple[Any, ...]  # tuple[D2Field, ...]
     action: str = ""  # "nothing" | "update"
     assignments: tuple[tuple[str, Any], ...] = dc_field(default_factory=tuple)
-    returning_fields: tuple[Any, ...] = dc_field(default_factory=tuple)  # tuple[NormField, ...]
+    returning_fields: tuple[Any, ...] = dc_field(default_factory=tuple)  # tuple[D2Field, ...]
 
     def do_nothing(self) -> "ConflictBuilder":
         return ConflictBuilder(insert=self.insert, targets=self.targets, action="nothing")
@@ -58,8 +58,8 @@ class ConflictBuilder:
 
             set_parts: list[str] = []
             for col_name, value in self.assignments:
-                from .schema import Field as NormField
-                if isinstance(value, NormField):
+                from .schema import Field as D2Field
+                if isinstance(value, D2Field):
                     term = value.to_column(offset_params, dialect)
                     term_sql = term.get_sql(quote_char='"')
                 else:
@@ -150,15 +150,15 @@ class InsertQuery:
     source: pypika.Table
     rows: tuple[dict[str, Any], ...]
     is_many: bool = False
-    returning_fields: tuple[NormField[Any], ...] = dc_field(default_factory=tuple)
+    returning_fields: tuple[D2Field[Any], ...] = dc_field(default_factory=tuple)
 
-    def returning(self, *fields: NormField[Any]) -> InsertQuery:
+    def returning(self, *fields: D2Field[Any]) -> InsertQuery:
         return InsertQuery(
             source=self.source, rows=self.rows,
             is_many=self.is_many, returning_fields=fields,
         )
 
-    def on_conflict(self, *proxies: NormField[Any]) -> ConflictBuilder:
+    def on_conflict(self, *proxies: D2Field[Any]) -> ConflictBuilder:
         return ConflictBuilder(insert=self, targets=proxies)
 
     def build(self, dialect: Dialect = PostgresDialect()) -> tuple[str, Any]:
@@ -195,8 +195,8 @@ class UpdateQuery:
         params: list[Any] = []
         q = pypika.Query.update(self.source)  # type: ignore[no-untyped-call]
         for col_name, value in self.assignments:
-            from .schema import Field as NormField
-            if isinstance(value, NormField):
+            from .schema import Field as D2Field
+            if isinstance(value, D2Field):
                 val_term = value.to_column(params, dialect)
                 q = q.set(pypika.Field(col_name), val_term)
             else:

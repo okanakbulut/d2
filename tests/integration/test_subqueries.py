@@ -5,8 +5,8 @@ from typing import Any
 
 import msgspec, pytest
 
-from norm import db
-from norm import AsyncConnection, TableMeta, Table, PrimaryKey, Field, field
+from d2 import db
+from d2 import AsyncConnection, TableMeta, Table, PrimaryKey, Field, field
 
 
 class SubqOrders(Table):

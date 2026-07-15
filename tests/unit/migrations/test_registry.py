@@ -1,7 +1,7 @@
 """Unit tests for the model registry."""
 
-from norm.migrations.registry import MODEL_REGISTRY, collect_models
-from norm.schema import Field, Table, View
+from d2.migrations.registry import MODEL_REGISTRY, collect_models
+from d2.schema import Field, Table, View
 
 
 class TestRegistryRegistration:

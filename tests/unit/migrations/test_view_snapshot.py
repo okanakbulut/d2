@@ -1,8 +1,8 @@
 """Unit tests for snapshotting `View` subclasses into SchemaState (issue 145)."""
 
-from norm.migrations.snapshot import models_to_schema_state
-from norm.migrations.state import ViewState
-from norm.schema import Field, PrimaryKey, Table, View
+from d2.migrations.snapshot import models_to_schema_state
+from d2.migrations.state import ViewState
+from d2.schema import Field, PrimaryKey, Table, View
 
 
 class UsersForView(Table):

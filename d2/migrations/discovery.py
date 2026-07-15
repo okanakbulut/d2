@@ -5,7 +5,7 @@ import pkgutil
 import sys
 from pathlib import Path
 
-from .config import NormConfig
+from .config import D2Config
 from .registry import MODEL_REGISTRY
 
 
@@ -39,7 +39,7 @@ def import_models_module(dotted: str) -> None:
                 importlib.import_module(full)
 
 
-def models_for(cfg: NormConfig) -> list[type]:
+def models_for(cfg: D2Config) -> list[type]:
     prefix = cfg.models
     stale = [
         key for key, cls in MODEL_REGISTRY.items()

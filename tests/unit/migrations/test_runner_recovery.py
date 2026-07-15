@@ -8,9 +8,9 @@ import pytest
 
 from typing import Any
 
-from norm.migrations import Migration
-from norm.migrations.operations import CreateIndex, Operation
-from norm.migrations.runner import MigrationRunner
+from d2.migrations import Migration
+from d2.migrations.operations import CreateIndex, Operation
+from d2.migrations.runner import MigrationRunner
 
 
 class _StubRaw:
@@ -84,7 +84,7 @@ async def test_non_atomic_migration_is_not_wrapped_in_transaction(
 
     assert raw.txn_entered == 0
     create_tracking_sql = (
-        "CREATE TABLE IF NOT EXISTS norm_migrations ("
+        "CREATE TABLE IF NOT EXISTS d2_migrations ("
         "id SERIAL PRIMARY KEY, "
         "name TEXT NOT NULL UNIQUE, "
         "applied_at TIMESTAMPTZ NOT NULL DEFAULT now()"
@@ -94,7 +94,7 @@ async def test_non_atomic_migration_is_not_wrapped_in_transaction(
         create_tracking_sql,
         create_tracking_sql,
         'CREATE INDEX CONCURRENTLY IF NOT EXISTS "idx_t_x" ON "public"."t" ("x")',
-        "INSERT INTO norm_migrations (name) VALUES ($1)",
+        "INSERT INTO d2_migrations (name) VALUES ($1)",
     ]
 
 
@@ -120,4 +120,4 @@ async def test_concurrently_failure_prints_recovery_and_reraises(
     assert 'DROP INDEX CONCURRENTLY IF EXISTS "public"."idx_t_x";' in captured.out
 
     # Migration NOT recorded.
-    assert "INSERT INTO norm_migrations (name) VALUES ($1)" not in raw.executed
+    assert "INSERT INTO d2_migrations (name) VALUES ($1)" not in raw.executed

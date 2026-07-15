@@ -7,19 +7,19 @@ import remarkMdLinks from './src/plugins/remark-md-links.mjs';
 // https://astro.build/config
 export default defineConfig({
 	site: 'https://okanakbulut.github.io',
-	base: '/norm',
+	base: '/d2',
 	markdown: {
 		remarkPlugins: [remarkMdLinks],
 	},
 	integrations: [
 		starlight({
-			title: 'Norm',
+			title: 'd2',
 			description: 'Async-first PostgreSQL ORM for Python',
 			social: [
-				{ icon: 'github', label: 'GitHub', href: 'https://github.com/okanakbulut/norm' },
+				{ icon: 'github', label: 'GitHub', href: 'https://github.com/okanakbulut/d2' },
 			],
 			editLink: {
-				baseUrl: 'https://github.com/okanakbulut/norm/edit/main/docs/',
+				baseUrl: 'https://github.com/okanakbulut/d2/edit/main/docs/',
 			},
 			plugins: [starlightLlmsTxt()],
 			sidebar: [

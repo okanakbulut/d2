@@ -6,8 +6,8 @@ from typing import Any
 import msgspec
 import pytest
 
-from norm import AsyncConnection
-from norm import TableMeta, Table, Field
+from d2 import AsyncConnection
+from d2 import TableMeta, Table, Field
 
 
 class EmpSalary(Table):

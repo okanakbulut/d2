@@ -11,26 +11,26 @@ import pytest
 
 
 MODELS_SOURCE = '''
-from norm.schema import Table, Field, PrimaryKey
-from norm.model import field, TableMeta
-from norm import db
+from d2.schema import Table, Field, PrimaryKey
+from d2.model import field, TableMeta
+from d2 import db
 
 
 class CliIntWidget(Table):
-    __meta__ = TableMeta(table="norm_cli_widgets", schema="public")
+    __meta__ = TableMeta(table="d2_cli_widgets", schema="public")
     id: PrimaryKey[int] = field(default=db.serial())
     label: Field[str]
 '''
 
 
 PYPROJECT = """
-[tool.norm]
+[tool.d2]
 migrations_dir = "migrations"
 models = "models"
 """
 
 
-PG_DSN = os.getenv("NORM_TEST_DSN", "postgresql://norm:norm@localhost:5432/norm_test")
+PG_DSN = os.getenv("D2_TEST_DSN", "postgresql://d2:d2@localhost:5432/d2_test")
 
 
 def _run_cli(workdir: Path, *args: str) -> subprocess.CompletedProcess:
@@ -38,7 +38,7 @@ def _run_cli(workdir: Path, *args: str) -> subprocess.CompletedProcess:
     env = os.environ.copy()
     env["PYTHONPATH"] = f"{workdir}{os.pathsep}{repo_root}"
     return subprocess.run(
-        [sys.executable, "-m", "norm.migrations", *args],
+        [sys.executable, "-m", "d2.migrations", *args],
         cwd=workdir,
         env=env,
         capture_output=True,
@@ -59,23 +59,23 @@ async def _table_exists(pg_conn: Any, schema: str, table: str) -> bool:
 @pytest.mark.asyncio(loop_scope="session")
 async def test_make_apply_check_end_to_end(pg_conn: Any, tmp_path: Path) -> None:
     # Clean slate
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_cli_widgets")
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_migrations")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_cli_widgets")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_migrations")
 
     (tmp_path / "pyproject.toml").write_text(PYPROJECT)
     (tmp_path / "models.py").write_text(MODELS_SOURCE)
     (tmp_path / "migrations").mkdir()
 
-    # 1. make → creates 0001_create_norm_cli_widgets.py
+    # 1. make → creates 0001_create_d2_cli_widgets.py
     proc = _run_cli(tmp_path, "make")
     assert proc.returncode == 0, proc.stderr
     files = sorted((tmp_path / "migrations").glob("*.py"))
-    assert [p.name for p in files] == ["0001_create_norm_cli_widgets.py"]
+    assert [p.name for p in files] == ["0001_create_d2_cli_widgets.py"]
 
     # 2. apply → table appears
     proc = _run_cli(tmp_path, "apply", "--dsn", PG_DSN)
     assert proc.returncode == 0, proc.stderr
-    assert await _table_exists(pg_conn, "public", "norm_cli_widgets")
+    assert await _table_exists(pg_conn, "public", "d2_cli_widgets")
 
     # 3. check → silent, exit 0
     proc = _run_cli(tmp_path, "check")
@@ -83,5 +83,5 @@ async def test_make_apply_check_end_to_end(pg_conn: Any, tmp_path: Path) -> None
     assert proc.stdout == ""
 
     # cleanup
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_cli_widgets")
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_migrations")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_cli_widgets")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_migrations")

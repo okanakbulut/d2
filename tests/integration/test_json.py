@@ -5,8 +5,8 @@ from typing import Any
 
 import pytest
 
-from norm import db
-from norm import AsyncConnection, Table, PrimaryKey, Unique, Field, TableMeta, field
+from d2 import db
+from d2 import AsyncConnection, Table, PrimaryKey, Unique, Field, TableMeta, field
 
 
 class JUsers(Table):

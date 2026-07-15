@@ -5,10 +5,10 @@ import os, pathlib, typing
 import pytest, msgspec, asyncpg
 
 
-from norm import db
-from norm import TableMeta, Table, PrimaryKey, Unique, Field, field
+from d2 import db
+from d2 import TableMeta, Table, PrimaryKey, Unique, Field, field
 
-PG_DSN = os.getenv("NORM_TEST_DSN", "postgresql://norm:norm@localhost:5432/norm_test")
+PG_DSN = os.getenv("D2_TEST_DSN", "postgresql://d2:d2@localhost:5432/d2_test")
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:

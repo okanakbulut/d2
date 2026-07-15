@@ -1,8 +1,8 @@
 """Unit tests for view diff strategy (issue 145)."""
 
-from norm.migrations.draft import diff_states
-from norm.migrations.operations import CreateView, DropView
-from norm.migrations.state import SchemaState, ViewState
+from d2.migrations.draft import diff_states
+from d2.migrations.operations import CreateView, DropView
+from d2.migrations.state import SchemaState, ViewState
 
 
 def _state_with_view(name: str, view: ViewState) -> SchemaState:

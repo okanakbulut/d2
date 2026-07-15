@@ -1,6 +1,6 @@
 import { visit } from 'unist-util-visit';
 
-const BASE = '/norm';
+const BASE = '/d2';
 
 /**
  * Rewrite relative links between sibling docs pages (`querying.md`,

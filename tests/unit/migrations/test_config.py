@@ -2,11 +2,11 @@
 
 from pathlib import Path
 
-from norm.migrations.config import NormConfig, load_config
+from d2.migrations.config import D2Config, load_config
 
 
 PYPROJECT_FULL = """
-[tool.norm]
+[tool.d2]
 migrations_dir = "mymigs"
 models = "myapp.models"
 """
@@ -18,10 +18,10 @@ name = "x"
 
 
 class TestLoadConfig:
-    def test_reads_tool_norm_section(self, tmp_path: Path):
+    def test_reads_tool_d2_section(self, tmp_path: Path):
         (tmp_path / "pyproject.toml").write_text(PYPROJECT_FULL)
         cfg = load_config(tmp_path)
-        assert cfg == NormConfig(
+        assert cfg == D2Config(
             migrations_dir=tmp_path / "mymigs",
             models="myapp.models",
         )

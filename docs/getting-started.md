@@ -6,16 +6,16 @@ description: "Installation, configuration, and your first table and query."
 ## Installation
 
 ```bash
-pip install norm
+pip install d2
 # Runtime dependencies: asyncpg, pypika, msgspec
 ```
 
 ## Configuration
 
-Norm reads project settings from `pyproject.toml`:
+d2 reads project settings from `pyproject.toml`:
 
 ```toml
-[tool.norm]
+[tool.d2]
 migrations_dir = "migrations"   # where .py migration files live
 models = "myapp.models"         # dotted import path to your Table definitions
 ```
@@ -25,7 +25,7 @@ Both keys have defaults (`./migrations` and `./models`) so the section is option
 ## Defining your first table
 
 ```python
->>> from norm import Table, Field, PrimaryKey, ForeignKey, Unique, field, TableMeta, db
+>>> from d2 import Table, Field, PrimaryKey, ForeignKey, Unique, field, TableMeta, db
 >>> class User(Table):
 ...     id:       PrimaryKey[int] = field(default=db.serial())
 ...     username: Unique[str]
@@ -44,7 +44,7 @@ Both keys have defaults (`./migrations` and `./models`) so the section is option
 Key points:
 - Subclass `Table` for read-write tables, `View` for read-only.
 - Use `PrimaryKey[T]`, `Unique[T]`, `Field[T]` annotations to declare columns.
-- `field(default=db.serial())` marks serial primary key columns — norm skips them in INSERT by default.
+- `field(default=db.serial())` marks serial primary key columns — d2 skips them in INSERT by default.
 - `Field[str | None]` marks a column as nullable.
 - `TableMeta` sets schema, table name overrides, composite indexes, and extensions.
 
@@ -68,7 +68,7 @@ Key points:
 
 ```python
 >>> import asyncpg  # doctest: +SKIP
->>> from norm import AsyncConnection  # doctest: +SKIP
+>>> from d2 import AsyncConnection  # doctest: +SKIP
 >>> import msgspec  # doctest: +SKIP
 >>> class UserRow(msgspec.Struct):  # doctest: +SKIP
 ...     id: int
@@ -96,13 +96,13 @@ Key points:
 After defining your tables, generate the first migration:
 
 ```bash
-python -m norm.migrations make --label initial
+python -m d2.migrations make --label initial
 ```
 
 This creates `migrations/0001_initial.py`. Apply it:
 
 ```bash
-python -m norm.migrations apply --dsn postgresql://localhost/mydb
+python -m d2.migrations apply --dsn postgresql://localhost/mydb
 ```
 
 See [Migrations](migrations.md) for the full workflow.

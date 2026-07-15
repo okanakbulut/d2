@@ -1,7 +1,7 @@
-"""Database-level expression primitives for norm model definitions.
+"""Database-level expression primitives for d2 model definitions.
 
 Usage:
-    from norm import db
+    from d2 import db
 
     id:         PrimaryKey[int]          = field(default=db.serial())
     created_at: Field[datetime]          = field(default=db.now())

@@ -2,7 +2,7 @@
 
 import pytest
 
-from norm.schema import Field, PrimaryKey, Table, View
+from d2.schema import Field, PrimaryKey, Table, View
 
 
 class _Users(Table):

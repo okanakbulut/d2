@@ -26,7 +26,7 @@ from .state import (
 
 
 # ---------------------------------------------------------------------------
-# Protocols — make the shapes snapshot.py reads from norm.schema explicit.
+# Protocols — make the shapes snapshot.py reads from d2.schema explicit.
 # These are static-only (not runtime_checkable) so there's zero runtime cost.
 # ---------------------------------------------------------------------------
 
@@ -59,7 +59,7 @@ class _TableMeta(Protocol):
     indexes: tuple[_IndexDef, ...]
 
 
-class _NormTable(Protocol):
+class _D2Table(Protocol):
     __fields__: tuple[_FieldProxy, ...]
     __table__: pypika.Table
 
@@ -102,8 +102,8 @@ def sql_type_for(python_type: Any) -> str:
 
 
 def column_spec_for_field(field: _FieldProxy) -> ColumnState:
-    from norm.db import _SerialExpr
-    from norm.schema import PrimaryKey
+    from d2.db import _SerialExpr
+    from d2.schema import PrimaryKey
 
     fd: _FieldDef = field.field_def
     is_pk = isinstance(field, PrimaryKey)
@@ -122,11 +122,11 @@ def column_spec_for_field(field: _FieldProxy) -> ColumnState:
 
 def resolve_fk_target(target: Any) -> tuple[str | None, str, str]:
     """Resolve a referenced Table subclass into (schema, table, pk_column)."""
-    from norm.schema import Table  # local import to avoid cycles
+    from d2.schema import Table  # local import to avoid cycles
 
     if isinstance(target, type) and issubclass(target, Table):
-        norm_table = cast(_NormTable, target)
-        pika_table = cast(pypika.Table, norm_table.__table__)
+        d2_table = cast(_D2Table, target)
+        pika_table = cast(pypika.Table, d2_table.__table__)
         ref_table: str = pika_table.get_table_name()
         schema_obj: Any = getattr(pika_table, "_schema", None)
         ref_schema: str | None = (
@@ -134,8 +134,8 @@ def resolve_fk_target(target: Any) -> tuple[str | None, str, str]:
             if schema_obj
             else None
         )
-        from norm.schema import PrimaryKey
-        pk_proxy = next(f for f in norm_table.__fields__ if isinstance(f, PrimaryKey))
+        from d2.schema import PrimaryKey
+        pk_proxy = next(f for f in d2_table.__fields__ if isinstance(f, PrimaryKey))
         return ref_schema, ref_table, pk_proxy.column_name
 
     raise TypeError(
@@ -230,7 +230,7 @@ def models_to_schema_state(models: list[type]) -> SchemaState:
     view state via their `__view_query__`. Schema-level state (extensions,
     schemas) is empty.
     """
-    from norm.schema import Table, View  # local import to avoid cycles
+    from d2.schema import Table, View  # local import to avoid cycles
 
     state = SchemaState()
     for cls in models:
@@ -240,11 +240,11 @@ def models_to_schema_state(models: list[type]) -> SchemaState:
         if not issubclass(cls, Table):
             continue
 
-        norm_table = cast(_NormTable, cls)
-        pika_table: pypika.Table = norm_table.__table__
+        d2_table = cast(_D2Table, cls)
+        pika_table: pypika.Table = d2_table.__table__
         table_name: str = pika_table.get_table_name()
         columns: dict[str, ColumnState] = {}
-        for f in norm_table.__fields__:
+        for f in d2_table.__fields__:
             try:
                 columns[f.column_name] = column_spec_for_field(f)
             except TypeError as exc:
@@ -258,7 +258,7 @@ def models_to_schema_state(models: list[type]) -> SchemaState:
         CreateTable(table=table_name, columns=columns, schema=schema_str).apply(state)
 
         table_state = state.tables[table_name]
-        for f in norm_table.__fields__:
+        for f in d2_table.__fields__:
             fd: _FieldDef = f.field_def
             col = f.column_name
             if fd.unique:

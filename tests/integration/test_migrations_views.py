@@ -11,13 +11,13 @@ import pytest
 
 
 MODELS_V1 = '''
-from norm.schema import Table, Field, PrimaryKey, View
-from norm.model import field, TableMeta
-from norm import db
+from d2.schema import Table, Field, PrimaryKey, View
+from d2.model import field, TableMeta
+from d2 import db
 
 
 class ViewUsers(Table):
-    __meta__ = TableMeta(table="norm_view_users", schema="public")
+    __meta__ = TableMeta(table="d2_view_users", schema="public")
     id: PrimaryKey[int] = field(default=db.serial())
     email: Field[str]
     deleted: Field[bool]
@@ -27,20 +27,20 @@ _active = ViewUsers.select(ViewUsers.id, ViewUsers.email).where(ViewUsers.delete
 
 
 class ActiveViewUsers(View, query=_active):
-    __meta__ = TableMeta(table="norm_active_view_users", schema="public")
+    __meta__ = TableMeta(table="d2_active_view_users", schema="public")
     id: PrimaryKey[int]
     email: Field[str]
 '''
 
 
 MODELS_V2 = '''
-from norm.schema import Table, Field, PrimaryKey, View
-from norm.model import field, TableMeta
-from norm import db
+from d2.schema import Table, Field, PrimaryKey, View
+from d2.model import field, TableMeta
+from d2 import db
 
 
 class ViewUsers(Table):
-    __meta__ = TableMeta(table="norm_view_users", schema="public")
+    __meta__ = TableMeta(table="d2_view_users", schema="public")
     id: PrimaryKey[int] = field(default=db.serial())
     email: Field[str]
     deleted: Field[bool]
@@ -51,20 +51,20 @@ _active = ViewUsers.select(ViewUsers.id, ViewUsers.email).where(ViewUsers.id > 0
 
 
 class ActiveViewUsers(View, query=_active):
-    __meta__ = TableMeta(table="norm_active_view_users", schema="public")
+    __meta__ = TableMeta(table="d2_active_view_users", schema="public")
     id: PrimaryKey[int]
     email: Field[str]
 '''
 
 
 PYPROJECT = """
-[tool.norm]
+[tool.d2]
 migrations_dir = "migrations"
 models = "models"
 """
 
 
-PG_DSN = os.getenv("NORM_TEST_DSN", "postgresql://norm:norm@localhost:5432/norm_test")
+PG_DSN = os.getenv("D2_TEST_DSN", "postgresql://d2:d2@localhost:5432/d2_test")
 
 
 def _run_cli(workdir: Path, *args: str) -> subprocess.CompletedProcess:
@@ -72,7 +72,7 @@ def _run_cli(workdir: Path, *args: str) -> subprocess.CompletedProcess:
     env = os.environ.copy()
     env["PYTHONPATH"] = f"{workdir}{os.pathsep}{repo_root}"
     return subprocess.run(
-        [sys.executable, "-m", "norm.migrations", *args],
+        [sys.executable, "-m", "d2.migrations", *args],
         cwd=workdir,
         env=env,
         capture_output=True,
@@ -93,9 +93,9 @@ async def _view_definition(pg_conn: Any, schema: str, name: str) -> str | None:
 @pytest.mark.asyncio(loop_scope="session")
 async def test_view_make_apply_then_replace(pg_conn: Any, tmp_path: Path) -> None:
     # Clean slate
-    await pg_conn.execute("DROP VIEW IF EXISTS public.norm_active_view_users")
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_view_users")
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_migrations")
+    await pg_conn.execute("DROP VIEW IF EXISTS public.d2_active_view_users")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_view_users")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_migrations")
 
     (tmp_path / "pyproject.toml").write_text(PYPROJECT)
     models_path = tmp_path / "models.py"
@@ -112,16 +112,16 @@ async def test_view_make_apply_then_replace(pg_conn: Any, tmp_path: Path) -> Non
     proc = _run_cli(tmp_path, "apply", "--dsn", PG_DSN)
     assert proc.returncode == 0, proc.stderr
 
-    defn_v1 = await _view_definition(pg_conn, "public", "norm_active_view_users")
+    defn_v1 = await _view_definition(pg_conn, "public", "d2_active_view_users")
     assert defn_v1 is not None
 
     # 3. populate base table and query through the view
     await pg_conn.execute(
-        "INSERT INTO public.norm_view_users (id, email, deleted) VALUES "
+        "INSERT INTO public.d2_view_users (id, email, deleted) VALUES "
         "(1, 'a@x', false), (2, 'b@x', true)"
     )
     rows = await pg_conn.fetch(
-        'SELECT "email" FROM public.norm_active_view_users ORDER BY "email"'
+        'SELECT "email" FROM public.d2_active_view_users ORDER BY "email"'
     )
     assert [r[0] for r in rows] == ["a@x"]
 
@@ -135,7 +135,7 @@ async def test_view_make_apply_then_replace(pg_conn: Any, tmp_path: Path) -> Non
     proc = _run_cli(tmp_path, "apply", "--dsn", PG_DSN)
     assert proc.returncode == 0, proc.stderr
 
-    defn_v2 = await _view_definition(pg_conn, "public", "norm_active_view_users")
+    defn_v2 = await _view_definition(pg_conn, "public", "d2_active_view_users")
     assert defn_v2 is not None
     assert defn_v2 != defn_v1
 
@@ -145,6 +145,6 @@ async def test_view_make_apply_then_replace(pg_conn: Any, tmp_path: Path) -> Non
     assert proc.stdout == ""
 
     # Cleanup
-    await pg_conn.execute("DROP VIEW IF EXISTS public.norm_active_view_users")
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_view_users")
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_migrations")
+    await pg_conn.execute("DROP VIEW IF EXISTS public.d2_active_view_users")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_view_users")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_migrations")

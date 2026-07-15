@@ -6,13 +6,13 @@ from typing import Any, ClassVar
 
 import pytest
 
-from norm.migrations import Migration
-from norm.migrations.operations import ColumnDef, CreateTable, DropTable, Operation
-from norm.migrations.runner import MigrationRunner
+from d2.migrations import Migration
+from d2.migrations.operations import ColumnDef, CreateTable, DropTable, Operation
+from d2.migrations.runner import MigrationRunner
 
 
 _CREATE_TRACKING_SQL = (
-    "CREATE TABLE IF NOT EXISTS norm_migrations ("
+    "CREATE TABLE IF NOT EXISTS d2_migrations ("
     "id SERIAL PRIMARY KEY, "
     "name TEXT NOT NULL UNIQUE, "
     "applied_at TIMESTAMPTZ NOT NULL DEFAULT now()"
@@ -30,7 +30,7 @@ class _StubRaw:
         self.executed.append((sql, args))
 
     async def fetch(self, sql: str, *args: object) -> list[dict[str, str]]:
-        # Mimic `SELECT name FROM norm_migrations ORDER BY name`.
+        # Mimic `SELECT name FROM d2_migrations ORDER BY name`.
         return [{"name": n} for n in sorted(self._applied)]
 
     def transaction(self) -> "_StubRaw":
@@ -167,7 +167,7 @@ async def test_rollback_empty_reverse_is_noop_but_removes_tracking_row(
     assert raw.executed == [
         (_CREATE_TRACKING_SQL, ()),
         (_CREATE_TRACKING_SQL, ()),
-        ("DELETE FROM norm_migrations WHERE name = $1", ("0001_empty",)),
+        ("DELETE FROM d2_migrations WHERE name = $1", ("0001_empty",)),
     ]
 
 
@@ -187,7 +187,7 @@ async def test_rollback_executes_reverse_ops_in_order_and_removes_tracking_row(
         (_CREATE_TRACKING_SQL, ()),
         (_CREATE_TRACKING_SQL, ()),
         ('DROP TABLE IF EXISTS "b"', ()),
-        ("DELETE FROM norm_migrations WHERE name = $1", ("0002_b",)),
+        ("DELETE FROM d2_migrations WHERE name = $1", ("0002_b",)),
     ]
 
 
@@ -206,7 +206,7 @@ async def test_rollback_with_force_allows_non_most_recent(
         (_CREATE_TRACKING_SQL, ()),
         (_CREATE_TRACKING_SQL, ()),
         ('DROP TABLE IF EXISTS "a"', ()),
-        ("DELETE FROM norm_migrations WHERE name = $1", ("0001_a",)),
+        ("DELETE FROM d2_migrations WHERE name = $1", ("0001_a",)),
     ]
 
 
@@ -214,7 +214,7 @@ async def test_rollback_with_force_allows_non_most_recent(
 async def test_rollback_non_atomic_migration_skips_transaction(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from norm.migrations.operations import DropIndex
+    from d2.migrations.operations import DropIndex
 
     class _NonAtomic(Migration):
         name = "0001_idx"
@@ -234,5 +234,5 @@ async def test_rollback_non_atomic_migration_skips_transaction(
         (_CREATE_TRACKING_SQL, ()),
         (_CREATE_TRACKING_SQL, ()),
         ('DROP INDEX CONCURRENTLY IF EXISTS "idx_x"', ()),
-        ("DELETE FROM norm_migrations WHERE name = $1", ("0001_idx",)),
+        ("DELETE FROM d2_migrations WHERE name = $1", ("0001_idx",)),
     ]

@@ -8,7 +8,7 @@ All query-building methods return a **new cloned entity** — the original is ne
 Call `.build()` to emit SQL and a tuple of parameters:
 
 ```python
->>> from norm import Table, Field, PrimaryKey, Unique, Index, field, db
+>>> from d2 import Table, Field, PrimaryKey, Unique, Index, field, db
 >>> class User(Table):
 ...     id:    PrimaryKey[int] = field(default=db.serial())
 ...     name:  Field[str]

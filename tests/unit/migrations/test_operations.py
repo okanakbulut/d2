@@ -2,7 +2,7 @@
 
 import pytest
 
-from norm.migrations.operations import (
+from d2.migrations.operations import (
     AddColumn,
     AlterColumnType,
     ColumnDef,
@@ -18,7 +18,7 @@ from norm.migrations.operations import (
     SetColumnDefault,
     SetColumnNotNull,
 )
-from norm.migrations.state import ColumnState, SchemaError, SchemaState, TableState
+from d2.migrations.state import ColumnState, SchemaError, SchemaState, TableState
 
 
 class TestCreateTableToDdl:

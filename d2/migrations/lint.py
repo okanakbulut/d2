@@ -3,7 +3,7 @@
 import re
 from pathlib import Path
 
-from .config import NormConfig
+from .config import D2Config
 from .discovery import existing_migration_files
 
 DDL_KEYWORDS = ("ALTER", "CREATE", "DROP", "TRUNCATE")
@@ -50,7 +50,7 @@ def run_sql_contains_ddl(sql: str) -> str | None:
     return None
 
 
-def check_atomic_mismatch(cfg: NormConfig) -> list[tuple[Path, str]]:
+def check_atomic_mismatch(cfg: D2Config) -> list[tuple[Path, str]]:
     from .operations import CreateIndex, DropIndex
     from .replay import load_migration
 
@@ -75,7 +75,7 @@ def check_atomic_mismatch(cfg: NormConfig) -> list[tuple[Path, str]]:
     return warnings
 
 
-def check_run_sql_ddl(cfg: NormConfig) -> list[tuple[Path, str]]:
+def check_run_sql_ddl(cfg: D2Config) -> list[tuple[Path, str]]:
     from .operations import RunSQL
     from .replay import load_migration
 

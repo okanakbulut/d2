@@ -14,8 +14,8 @@ import asyncpg  # type: ignore[import-untyped]
 
 import msgspec
 
-from norm import db
-from norm import (
+from d2 import db
+from d2 import (
     TableMeta, Table, PrimaryKey, Unique, Field, field,
     AsyncConnection,
 )
@@ -23,7 +23,7 @@ from norm import (
 
 pytestmark = pytest.mark.integration
 
-PG_DSN = os.getenv("NORM_TEST_DSN", "postgresql://norm:norm@localhost:5432/norm_test")
+PG_DSN = os.getenv("D2_TEST_DSN", "postgresql://d2:d2@localhost:5432/d2_test")
 
 
 

@@ -2,8 +2,8 @@
 
 import pytest
 
-from norm import db
-from norm import TableMeta, Field, PrimaryKey, Unique, Index, Table, View, field
+from d2 import db
+from d2 import TableMeta, Field, PrimaryKey, Unique, Index, Table, View, field
 from .conftest import Users, UserModelExplicit
 
 

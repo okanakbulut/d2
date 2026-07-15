@@ -66,8 +66,8 @@ def render(
                     extra_modules.add(mod)
 
     lines: list[str] = []
-    lines.append("from norm.migrations import Migration")
-    lines.append(f"from norm.migrations.operations import {IMPORT_NAMES}")
+    lines.append("from d2.migrations import Migration")
+    lines.append(f"from d2.migrations.operations import {IMPORT_NAMES}")
     for mod in sorted(extra_modules):
         lines.append(f"import {mod}")
     lines.append("")

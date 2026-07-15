@@ -6,20 +6,20 @@ from typing import Any
 
 import pytest
 
-from norm import AsyncpgDriver
-from norm.migrations.runner import MigrationRunner
+from d2 import AsyncpgDriver
+from d2.migrations.runner import MigrationRunner
 
 
 MIGRATION_0001 = '''
-from norm.migrations import Migration
-from norm.migrations.operations import CreateTable, ColumnDef
+from d2.migrations import Migration
+from d2.migrations.operations import CreateTable, ColumnDef
 
 
 class Migration(Migration):
     name = "0001_initial"
     operations = [
         CreateTable(
-            table="norm_mig_widgets",
+            table="d2_mig_widgets",
             schema="public",
             columns={
                 "id": ColumnDef(type="BIGSERIAL", nullable=False, primary_key=True),
@@ -45,8 +45,8 @@ async def test_runner_applies_pending_creates_table_and_records_migration(
     pg_conn: Any, tmp_path: Path
 ) -> None:
     # Clean slate
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_mig_widgets")
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_migrations")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_mig_widgets")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_migrations")
 
     (tmp_path / "0001_initial.py").write_text(MIGRATION_0001)
 
@@ -61,8 +61,8 @@ async def test_runner_applies_pending_creates_table_and_records_migration(
     applied_now = await runner.apply()
     assert applied_now == ["0001_initial"]
 
-    assert await _table_exists(pg_conn, "public", "norm_mig_widgets")
-    assert await _table_exists(pg_conn, "public", "norm_migrations")
+    assert await _table_exists(pg_conn, "public", "d2_mig_widgets")
+    assert await _table_exists(pg_conn, "public", "d2_migrations")
 
     applied_after = await runner.applied()
     assert applied_after == ["0001_initial"]
@@ -74,5 +74,5 @@ async def test_runner_applies_pending_creates_table_and_records_migration(
     assert applied_second == []
 
     # Cleanup
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_mig_widgets")
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_migrations")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_mig_widgets")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_migrations")

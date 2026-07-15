@@ -1,8 +1,8 @@
 """Reverse-completeness tests for diff_states (issue 147)."""
 
 
-from norm.migrations.draft import diff_states
-from norm.migrations.operations import (
+from d2.migrations.draft import diff_states
+from d2.migrations.operations import (
     AddColumn,
     AddConstraint,
     AlterColumnType,
@@ -23,7 +23,7 @@ from norm.migrations.operations import (
     SetColumnDefault,
     SetColumnNotNull,
 )
-from norm.migrations.state import ColumnState, IndexDef, SchemaState, TableState, UniqueConstraint, ViewState
+from d2.migrations.state import ColumnState, IndexDef, SchemaState, TableState, UniqueConstraint, ViewState
 
 
 def _state(

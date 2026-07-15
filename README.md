@@ -1,4 +1,4 @@
-# norm
+# d2
 
 Async-first PostgreSQL ORM for Python with a composable query builder and integrated migrations.
 
@@ -7,20 +7,23 @@ Async-first PostgreSQL ORM for Python with a composable query builder and integr
 - **Integrated migrations** — schema diffing, codegen, apply/rollback, lint checks
 - **Async-first** — built on [asyncpg](https://github.com/MagicStack/asyncpg); results deserialised via [msgspec](https://github.com/jcrist/msgspec)
 
-**Documentation:** <https://okanakbulut.github.io/norm/> (source in [docs/](docs/) — every example is a doctest, verified in CI)
+**Documentation:** <https://okanakbulut.github.io/d2/> (source in [docs/](docs/) — every example is a doctest, verified in CI)
 
 ## Installation
 
 Requires Python 3.14+ and PostgreSQL.
 
 ```sh
-pip install norm
+pip install git+https://github.com/okanakbulut/d2
 ```
+
+> The `d2` name on PyPI is pending an ownership transfer of an abandoned
+> package; until that completes, install from GitHub as above.
 
 ## Quick example
 
 ```python
-from norm import Table, Field, PrimaryKey, Unique, field, db
+from d2 import Table, Field, PrimaryKey, Unique, field, db
 
 class User(Table):
     id:    PrimaryKey[int] = field(default=db.serial())

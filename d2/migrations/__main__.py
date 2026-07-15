@@ -1,4 +1,4 @@
-"""Migrations CLI: `python -m norm.migrations {make,apply,check}`."""
+"""Migrations CLI: `python -m d2.migrations {make,apply,check}`."""
 
 
 import argparse
@@ -8,13 +8,13 @@ from pathlib import Path
 from typing import Any
 
 from .codegen import make_migration
-from .config import NormConfig, load_config
+from .config import D2Config, load_config
 from .discovery import existing_migration_files, models_for, next_number
 from .lint import check_atomic_mismatch, check_run_sql_ddl
 from .pipeline import SchemaPipeline
 
 
-def compute_pipeline(cfg: NormConfig) -> SchemaPipeline:
+def compute_pipeline(cfg: D2Config) -> SchemaPipeline:
     cfg.migrations_dir.mkdir(parents=True, exist_ok=True)
     files = existing_migration_files(cfg.migrations_dir)
     models = models_for(cfg)
@@ -71,7 +71,7 @@ def cmd_check(*, cwd: Path, migrations_dir: str | None = None, models: str | Non
 async def cmd_apply(*, cwd: Path, dsn: str, migrations_dir: str | None = None, models: str | None = None) -> int:
     import asyncpg  # local import to keep CLI startup light
 
-    from norm.connection import AsyncpgDriver
+    from d2.connection import AsyncpgDriver
     from .runner import MigrationRunner
 
     cfg = load_config(cwd, migrations_dir_override=migrations_dir, models_override=models)
@@ -100,7 +100,7 @@ async def cmd_rollback(
 ) -> int:
     import asyncpg  # local import to keep CLI startup light
 
-    from norm.connection import AsyncpgDriver
+    from d2.connection import AsyncpgDriver
     from .runner import MigrationRunner
 
     cfg = load_config(cwd, migrations_dir_override=migrations_dir, models_override=models)
@@ -116,7 +116,7 @@ async def cmd_rollback(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="norm.migrations")
+    parser = argparse.ArgumentParser(prog="d2.migrations")
     parser.add_argument("--migrations-dir", default=None)
     parser.add_argument("--models", default=None)
     sub = parser.add_subparsers(dest="cmd", required=True)

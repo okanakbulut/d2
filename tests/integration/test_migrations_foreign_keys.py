@@ -13,30 +13,30 @@ import pytest
 
 
 MODELS = '''
-from norm import Table, Field, ForeignKey, PrimaryKey, db, field
-from norm.model import TableMeta
+from d2 import Table, Field, ForeignKey, PrimaryKey, db, field
+from d2.model import TableMeta
 
 
-class NormFkOrg(Table):
-    __meta__ = TableMeta(table="norm_fk_org", schema="public")
+class D2FkOrg(Table):
+    __meta__ = TableMeta(table="d2_fk_org", schema="public")
     id: PrimaryKey[int] = field(default=db.serial())
 
 
-class NormFkUser(Table):
-    __meta__ = TableMeta(table="norm_fk_user", schema="public")
+class D2FkUser(Table):
+    __meta__ = TableMeta(table="d2_fk_user", schema="public")
     id: PrimaryKey[int] = field(default=db.serial())
-    org_id: ForeignKey[NormFkOrg] = field(on_delete=db.CASCADE)
+    org_id: ForeignKey[D2FkOrg] = field(on_delete=db.CASCADE)
 '''
 
 
 PYPROJECT = """
-[tool.norm]
+[tool.d2]
 migrations_dir = "migrations"
 models = "models"
 """
 
 
-PG_DSN = os.getenv("NORM_TEST_DSN", "postgresql://norm:norm@localhost:5432/norm_test")
+PG_DSN = os.getenv("D2_TEST_DSN", "postgresql://d2:d2@localhost:5432/d2_test")
 
 
 def _run_cli(workdir: Path, *args: str) -> subprocess.CompletedProcess:
@@ -44,7 +44,7 @@ def _run_cli(workdir: Path, *args: str) -> subprocess.CompletedProcess:
     env = os.environ.copy()
     env["PYTHONPATH"] = f"{workdir}{os.pathsep}{repo_root}"
     return subprocess.run(
-        [sys.executable, "-m", "norm.migrations", *args],
+        [sys.executable, "-m", "d2.migrations", *args],
         cwd=workdir,
         env=env,
         capture_output=True,
@@ -54,9 +54,9 @@ def _run_cli(workdir: Path, *args: str) -> subprocess.CompletedProcess:
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_fk_make_and_apply(pg_conn: Any, tmp_path: Path) -> None:
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_fk_user")
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_fk_org")
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_migrations")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_fk_user")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_fk_org")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_migrations")
 
     (tmp_path / "pyproject.toml").write_text(PYPROJECT)
     (tmp_path / "models.py").write_text(MODELS)
@@ -70,8 +70,8 @@ async def test_fk_make_and_apply(pg_conn: Any, tmp_path: Path) -> None:
     body = files[0].read_text()
 
     # The forward op list must show both CreateTable ops BEFORE the FK AddConstraint.
-    pos_create_org = body.index('CreateTable(\n            table="norm_fk_org"')
-    pos_create_user = body.index('CreateTable(\n            table="norm_fk_user"')
+    pos_create_org = body.index('CreateTable(\n            table="d2_fk_org"')
+    pos_create_user = body.index('CreateTable(\n            table="d2_fk_user"')
     pos_fk = body.index('"type": "foreign_key"')
     assert pos_create_org < pos_fk
     assert pos_create_user < pos_fk
@@ -82,14 +82,14 @@ async def test_fk_make_and_apply(pg_conn: Any, tmp_path: Path) -> None:
     constraint_row = await pg_conn.fetchrow(
         "SELECT conname, confrelid::regclass::text AS ref_table "
         "FROM pg_constraint WHERE conname = $1",
-        "norm_fk_user_org_id_fkey",
+        "d2_fk_user_org_id_fkey",
     )
     assert constraint_row is not None
-    assert constraint_row["ref_table"] == "norm_fk_org"
+    assert constraint_row["ref_table"] == "d2_fk_org"
 
     proc = _run_cli(tmp_path, "check")
     assert proc.returncode == 0, (proc.stdout, proc.stderr)
 
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_fk_user")
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_fk_org")
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_migrations")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_fk_user")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_fk_org")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_migrations")

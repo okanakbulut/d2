@@ -7,16 +7,16 @@ from typing import Any
 
 import pytest
 
-from norm import AsyncpgDriver
-from norm.migrations.runner import MigrationRunner
+from d2 import AsyncpgDriver
+from d2.migrations.runner import MigrationRunner
 
 
-PG_DSN = os.getenv("NORM_TEST_DSN", "postgresql://norm:norm@localhost:5432/norm_test")
+PG_DSN = os.getenv("D2_TEST_DSN", "postgresql://d2:d2@localhost:5432/d2_test")
 
 
 MIGRATION_CREATE = '''
-from norm.migrations import Migration
-from norm.migrations.operations import CreateTable, ColumnDef, DropTable
+from d2.migrations import Migration
+from d2.migrations.operations import CreateTable, ColumnDef, DropTable
 
 
 class Migration(Migration):
@@ -24,7 +24,7 @@ class Migration(Migration):
     dependencies = []
     operations = [
         CreateTable(
-            table="norm_eh_widgets",
+            table="d2_eh_widgets",
             schema="public",
             columns={
                 "id": ColumnDef(type="BIGINT", nullable=False, primary_key=True),
@@ -33,26 +33,26 @@ class Migration(Migration):
         ),
     ]
     reverse_operations = [
-        DropTable(table="norm_eh_widgets", schema="public"),
+        DropTable(table="d2_eh_widgets", schema="public"),
     ]
 '''
 
 
 MIGRATION_BACKFILL = '''
-from norm.migrations import Migration
-from norm.migrations.operations import RunPython
+from d2.migrations import Migration
+from d2.migrations.operations import RunPython
 
 
 async def _forward(conn):
     raw = conn._conn
     await raw.execute(
-        "INSERT INTO public.norm_eh_widgets (id, label) VALUES (1, 'alpha'), (2, 'beta')"
+        "INSERT INTO public.d2_eh_widgets (id, label) VALUES (1, 'alpha'), (2, 'beta')"
     )
 
 
 async def _reverse(conn):
     raw = conn._conn
-    await raw.execute("DELETE FROM public.norm_eh_widgets WHERE id IN (1, 2)")
+    await raw.execute("DELETE FROM public.d2_eh_widgets WHERE id IN (1, 2)")
 
 
 class Migration(Migration):
@@ -67,8 +67,8 @@ class Migration(Migration):
 async def test_run_python_apply_runs_fn_and_rollback_runs_reverse(
     pg_conn: Any, tmp_path: Path
 ) -> None:
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_eh_widgets")
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_migrations")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_eh_widgets")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_migrations")
 
     (tmp_path / "0001_create.py").write_text(MIGRATION_CREATE)
     (tmp_path / "0002_backfill.py").write_text(MIGRATION_BACKFILL)
@@ -79,25 +79,25 @@ async def test_run_python_apply_runs_fn_and_rollback_runs_reverse(
     assert applied == ["0001_create", "0002_backfill"]
 
     rows = await pg_conn.fetch(
-        "SELECT id, label FROM public.norm_eh_widgets ORDER BY id"
+        "SELECT id, label FROM public.d2_eh_widgets ORDER BY id"
     )
     assert [(r["id"], r["label"]) for r in rows] == [(1, "alpha"), (2, "beta")]
 
     await runner.rollback("0002_backfill")
 
     rows_after = await pg_conn.fetch(
-        "SELECT id FROM public.norm_eh_widgets ORDER BY id"
+        "SELECT id FROM public.d2_eh_widgets ORDER BY id"
     )
     assert list(rows_after) == []
     assert await runner.applied() == ["0001_create"]
 
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_eh_widgets")
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_migrations")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_eh_widgets")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_migrations")
 
 
 MIGRATION_RUNSQL_SEED = '''
-from norm.migrations import Migration
-from norm.migrations.operations import RunSQL
+from d2.migrations import Migration
+from d2.migrations.operations import RunSQL
 
 
 class Migration(Migration):
@@ -106,19 +106,19 @@ class Migration(Migration):
     operations = [
         RunSQL(
             sql=(
-                "INSERT INTO public.norm_eh_widgets (id, label) VALUES (10, 'x');"
-                " INSERT INTO public.norm_eh_widgets (id, label) VALUES (20, 'y')"
+                "INSERT INTO public.d2_eh_widgets (id, label) VALUES (10, 'x');"
+                " INSERT INTO public.d2_eh_widgets (id, label) VALUES (20, 'y')"
             ),
-            reverse_sql="DELETE FROM public.norm_eh_widgets WHERE id IN (10, 20)",
+            reverse_sql="DELETE FROM public.d2_eh_widgets WHERE id IN (10, 20)",
         ),
     ]
     reverse_operations = [
         RunSQL(
             sql=(
-                "INSERT INTO public.norm_eh_widgets (id, label) VALUES (10, 'x');"
-                " INSERT INTO public.norm_eh_widgets (id, label) VALUES (20, 'y')"
+                "INSERT INTO public.d2_eh_widgets (id, label) VALUES (10, 'x');"
+                " INSERT INTO public.d2_eh_widgets (id, label) VALUES (20, 'y')"
             ),
-            reverse_sql="DELETE FROM public.norm_eh_widgets WHERE id IN (10, 20)",
+            reverse_sql="DELETE FROM public.d2_eh_widgets WHERE id IN (10, 20)",
         ),
     ]
 '''
@@ -128,8 +128,8 @@ class Migration(Migration):
 async def test_run_sql_splits_statements_and_rollback_runs_reverse_sql(
     pg_conn: Any, tmp_path: Path
 ) -> None:
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_eh_widgets")
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_migrations")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_eh_widgets")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_migrations")
 
     (tmp_path / "0001_create.py").write_text(MIGRATION_CREATE)
     (tmp_path / "0002_seed.py").write_text(MIGRATION_RUNSQL_SEED)
@@ -139,16 +139,16 @@ async def test_run_sql_splits_statements_and_rollback_runs_reverse_sql(
     await runner.apply()
 
     rows = await pg_conn.fetch(
-        "SELECT id FROM public.norm_eh_widgets ORDER BY id"
+        "SELECT id FROM public.d2_eh_widgets ORDER BY id"
     )
     assert [r["id"] for r in rows] == [10, 20]
 
     await runner.rollback("0002_seed")
 
     rows_after = await pg_conn.fetch(
-        "SELECT id FROM public.norm_eh_widgets ORDER BY id"
+        "SELECT id FROM public.d2_eh_widgets ORDER BY id"
     )
     assert list(rows_after) == []
 
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_eh_widgets")
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_migrations")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_eh_widgets")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_migrations")

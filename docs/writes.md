@@ -4,7 +4,7 @@ description: "INSERT, UPDATE, DELETE, upsert, returning, and excluded()."
 ---
 
 ```python
->>> from norm import Table, Field, PrimaryKey, Unique, field, excluded, db
+>>> from d2 import Table, Field, PrimaryKey, Unique, field, excluded, db
 >>> class User(Table):
 ...     id:       PrimaryKey[int] = field(default=db.serial())
 ...     username: Unique[str]
@@ -147,4 +147,4 @@ Assign a field value to another field (column-to-column update):
 
 ```
 
-Without a `.where()` the DELETE will affect every row. Norm does not add any safety guard — always filter.
+Without a `.where()` the DELETE will affect every row. d2 does not add any safety guard — always filter.

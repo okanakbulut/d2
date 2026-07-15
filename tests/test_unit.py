@@ -2,8 +2,8 @@
 
 import pytest
 
-from norm import db
-from norm import TableMeta, Field, PrimaryKey, Unique, Index, Table, View, field
+from d2 import db
+from d2 import TableMeta, Field, PrimaryKey, Unique, Index, Table, View, field
 
 
 # ---------------------------------------------------------------------------
@@ -60,7 +60,7 @@ class TestTableMeta:
         assert meta.schema == "public"
 
     def test_defaults(self):
-        from norm.model import _INFER
+        from d2.model import _INFER
         meta = TableMeta()
         assert meta.table is None
         assert meta.schema is _INFER
@@ -145,7 +145,7 @@ class TestTableClass:
 
 class TestFieldPredicates:
     def test_eq_returns_criterion_not_bool(self):
-        from norm.filter import Filter
+        from d2.filter import Filter
         criterion = Users.id == 42
         assert isinstance(criterion, Filter)
 
@@ -242,7 +242,7 @@ class TestQueryBuilder:
 
 class TestComparisonPredicates:
     def test_ne_produces_filter(self):
-        from norm.filter import Filter
+        from d2.filter import Filter
         criterion = Users.id != 5
         assert isinstance(criterion, Filter)
 
@@ -395,7 +395,7 @@ class TestArithmeticOperators:
         assert params == ()
 
     def test_arithmetic_returns_field(self):
-        from norm.schema import Field
+        from d2.schema import Field
         expr = Users.age + 1
         assert isinstance(expr, Field)
 

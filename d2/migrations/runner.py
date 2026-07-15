@@ -1,7 +1,7 @@
 """MigrationRunner — tracer slice (issue 140).
 
 Discovers migration files, applies pending ones in name-sorted order, and
-records each in `norm_migrations`. Supports `atomic=True` (BEGIN/COMMIT) and
+records each in `d2_migrations`. Supports `atomic=True` (BEGIN/COMMIT) and
 `atomic=False` (no transaction wrap).
 """
 
@@ -9,7 +9,7 @@ records each in `norm_migrations`. Supports `atomic=True` (BEGIN/COMMIT) and
 from pathlib import Path
 from typing import cast
 
-from norm.driver import Driver
+from d2.driver import Driver
 
 from . import Migration
 from .operations import CreateIndex, DropIndex, Operation, RunPython, RunSQL
@@ -21,7 +21,7 @@ def _split_sql_statements(sql: str) -> list[str]:
 
 
 _CREATE_TRACKING_TABLE = (
-    "CREATE TABLE IF NOT EXISTS norm_migrations ("
+    "CREATE TABLE IF NOT EXISTS d2_migrations ("
     "id SERIAL PRIMARY KEY, "
     "name TEXT NOT NULL UNIQUE, "
     "applied_at TIMESTAMPTZ NOT NULL DEFAULT now()"
@@ -34,7 +34,7 @@ class MigrationRunner:
         self,
         conn: Driver,
         migrations_dir: str,
-        migrations_table: str = "norm_migrations",
+        migrations_table: str = "d2_migrations",
     ) -> None:
         self._conn = conn
         self._migrations_dir = Path(migrations_dir)

@@ -4,8 +4,8 @@ from pathlib import Path
 
 from typing import Any
 
-from norm.migrations.codegen import make_migration
-from norm.migrations.operations import CreateView, DropView
+from d2.migrations.codegen import make_migration
+from d2.migrations.operations import CreateView, DropView
 
 
 class TestViewCodegen:

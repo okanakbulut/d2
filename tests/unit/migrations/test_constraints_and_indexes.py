@@ -4,19 +4,19 @@ from pathlib import Path
 
 import pytest
 
-from norm.migrations.naming import (
+from d2.migrations.naming import (
     IdentifierTooLongError,
     auto_index_name,
     auto_unique_name,
 )
-from norm.migrations.operations import (
+from d2.migrations.operations import (
     AddConstraint,
     CreateIndex,
     DropConstraint,
     DropIndex,
     Operation,
 )
-from norm.migrations.state import (
+from d2.migrations.state import (
     ColumnState,
     IndexDef,
     SchemaError,
@@ -203,15 +203,15 @@ class TestCheckWarnsOnAtomicMismatch:
     ) -> None:
         import sys
 
-        from norm.migrations.__main__ import cmd_check
+        from d2.migrations.__main__ import cmd_check
 
-        (tmp_path / "pyproject.toml").write_text("[tool.norm]\n")
+        (tmp_path / "pyproject.toml").write_text("[tool.d2]\n")
         (tmp_path / "models.py").write_text("")
         migs = tmp_path / "migrations"
         migs.mkdir()
         (migs / "0001_bad.py").write_text(
-            "from norm.migrations import Migration\n"
-            "from norm.migrations.operations import ColumnDef, CreateIndex, CreateTable\n"
+            "from d2.migrations import Migration\n"
+            "from d2.migrations.operations import ColumnDef, CreateIndex, CreateTable\n"
             "\n"
             "class Migration(Migration):\n"
             "    name = '0001_bad'\n"
@@ -239,9 +239,9 @@ class TestCheckWarnsOnAtomicMismatch:
 
 class TestSnapshotConstraintsAndIndexes:
     def test_field_unique_produces_constraint_in_snapshot(self):
-        from norm.migrations.snapshot import models_to_schema_state
-        from norm.model import field
-        from norm.schema import Field, Table
+        from d2.migrations.snapshot import models_to_schema_state
+        from d2.model import field
+        from d2.schema import Field, Table
 
         class SnapUniqueUser(Table):
             email: Field[str] = field(unique=True)
@@ -254,9 +254,9 @@ class TestSnapshotConstraintsAndIndexes:
         assert t.indexes == []
 
     def test_field_index_produces_index_in_snapshot(self):
-        from norm.migrations.snapshot import models_to_schema_state
-        from norm.model import field
-        from norm.schema import Field, Table
+        from d2.migrations.snapshot import models_to_schema_state
+        from d2.model import field
+        from d2.schema import Field, Table
 
         class SnapIndexedUser(Table):
             email: Field[str] = field(index=True)
@@ -269,9 +269,9 @@ class TestSnapshotConstraintsAndIndexes:
         ]
 
     def test_table_meta_indexes_added_to_snapshot(self):
-        import norm.model as _model
-        from norm.migrations.snapshot import models_to_schema_state
-        from norm.schema import Field, Table
+        import d2.model as _model
+        from d2.migrations.snapshot import models_to_schema_state
+        from d2.schema import Field, Table
 
         class SnapEvent(Table):
             __meta__ = _model.TableMeta(
@@ -291,7 +291,7 @@ class TestSnapshotConstraintsAndIndexes:
 
 class TestDiffConstraintsAndIndexes:
     def test_new_unique_constraint_yields_add_and_reverse_drop(self):
-        from norm.migrations.draft import diff_states
+        from d2.migrations.draft import diff_states
 
         current = SchemaState()
         current.tables["t"] = TableState(
@@ -318,7 +318,7 @@ class TestDiffConstraintsAndIndexes:
         ]
 
     def test_dropped_unique_constraint_yields_drop_and_reverse_add(self):
-        from norm.migrations.draft import diff_states
+        from d2.migrations.draft import diff_states
 
         constraint = UniqueConstraint(name="t_email_key", columns=("email",))
         current = SchemaState()
@@ -342,7 +342,7 @@ class TestDiffConstraintsAndIndexes:
         ]
 
     def test_new_index_yields_create_and_reverse_drop(self):
-        from norm.migrations.draft import diff_states
+        from d2.migrations.draft import diff_states
 
         current = SchemaState()
         current.tables["t"] = TableState(
@@ -371,7 +371,7 @@ class TestDiffConstraintsAndIndexes:
         assert reverse == [DropIndex(name="idx_t_x", concurrent=True, schema="public", table="t")]
 
     def test_dropped_index_yields_drop_and_reverse_create(self):
-        from norm.migrations.draft import diff_states
+        from d2.migrations.draft import diff_states
 
         idx = IndexDef(name="idx_t_x", columns=("x",), unique=False, method=None)
         current = SchemaState()
@@ -401,8 +401,8 @@ class TestDiffConstraintsAndIndexes:
         ]
 
 
-EXPECTED_CODEGEN_ATOMIC_FALSE = '''from norm.migrations import Migration
-from norm.migrations.operations import AddColumn, AddConstraint, AlterColumnType, ColumnDef, CreateExtension, CreateIndex, CreateSchema, CreateTable, CreateView, DropColumn, DropColumnDefault, DropColumnNotNull, DropConstraint, DropExtension, DropIndex, DropSchema, DropTable, DropView, RenameColumn, SetColumnDefault, SetColumnNotNull
+EXPECTED_CODEGEN_ATOMIC_FALSE = '''from d2.migrations import Migration
+from d2.migrations.operations import AddColumn, AddConstraint, AlterColumnType, ColumnDef, CreateExtension, CreateIndex, CreateSchema, CreateTable, CreateView, DropColumn, DropColumnDefault, DropColumnNotNull, DropConstraint, DropExtension, DropIndex, DropSchema, DropTable, DropView, RenameColumn, SetColumnDefault, SetColumnNotNull
 
 # atomic = False because this migration contains non-transactional operations (CONCURRENTLY).
 
@@ -425,8 +425,8 @@ class Migration(Migration):
 '''
 
 
-EXPECTED_CODEGEN_ATOMIC_TRUE = '''from norm.migrations import Migration
-from norm.migrations.operations import AddColumn, AddConstraint, AlterColumnType, ColumnDef, CreateExtension, CreateIndex, CreateSchema, CreateTable, CreateView, DropColumn, DropColumnDefault, DropColumnNotNull, DropConstraint, DropExtension, DropIndex, DropSchema, DropTable, DropView, RenameColumn, SetColumnDefault, SetColumnNotNull
+EXPECTED_CODEGEN_ATOMIC_TRUE = '''from d2.migrations import Migration
+from d2.migrations.operations import AddColumn, AddConstraint, AlterColumnType, ColumnDef, CreateExtension, CreateIndex, CreateSchema, CreateTable, CreateView, DropColumn, DropColumnDefault, DropColumnNotNull, DropConstraint, DropExtension, DropIndex, DropSchema, DropTable, DropView, RenameColumn, SetColumnDefault, SetColumnNotNull
 
 
 class Migration(Migration):
@@ -445,7 +445,7 @@ class TestCodegenConstraintsAndIndexes:
     def test_renders_non_atomic_with_comment_when_concurrent_ops_present(
         self, tmp_path: Path
     ) -> None:
-        from norm.migrations.codegen import make_migration
+        from d2.migrations.codegen import make_migration
 
         forward: list[Operation] = [
             AddConstraint(
@@ -494,7 +494,7 @@ class TestCodegenConstraintsAndIndexes:
         assert path.read_text() == EXPECTED_CODEGEN_ATOMIC_FALSE
 
     def test_renders_atomic_true_when_only_constraint_ops(self, tmp_path: Path) -> None:
-        from norm.migrations.codegen import make_migration
+        from d2.migrations.codegen import make_migration
 
         forward: list[Operation] = [
             AddConstraint(

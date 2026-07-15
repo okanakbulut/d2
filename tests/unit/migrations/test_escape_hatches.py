@@ -6,14 +6,14 @@ from typing import Any, ClassVar
 
 import pytest
 
-from norm.migrations import Migration
-from norm.migrations.operations import Operation, RunPython, RunSQL
-from norm.migrations.runner import MigrationRunner
-from norm.migrations.state import SchemaState
+from d2.migrations import Migration
+from d2.migrations.operations import Operation, RunPython, RunSQL
+from d2.migrations.runner import MigrationRunner
+from d2.migrations.state import SchemaState
 
 
 _CREATE_TRACKING_SQL = (
-    "CREATE TABLE IF NOT EXISTS norm_migrations ("
+    "CREATE TABLE IF NOT EXISTS d2_migrations ("
     "id SERIAL PRIMARY KEY, "
     "name TEXT NOT NULL UNIQUE, "
     "applied_at TIMESTAMPTZ NOT NULL DEFAULT now()"
@@ -131,7 +131,7 @@ class TestRunnerRunSQLDispatch:
             (_CREATE_TRACKING_SQL, ()),
             ("INSERT INTO foo (id) VALUES (1)", ()),
             ("INSERT INTO foo (id) VALUES (2)", ()),
-            ("INSERT INTO norm_migrations (name) VALUES ($1)", ("0001_seed",)),
+            ("INSERT INTO d2_migrations (name) VALUES ($1)", ("0001_seed",)),
         ]
 
     @pytest.mark.asyncio
@@ -152,7 +152,7 @@ class TestRunnerRunSQLDispatch:
             (_CREATE_TRACKING_SQL, ()),
             (_CREATE_TRACKING_SQL, ()),
             ("INSERT INTO foo (id) VALUES (1)", ()),
-            ("INSERT INTO norm_migrations (name) VALUES ($1)", ("0001_seed",)),
+            ("INSERT INTO d2_migrations (name) VALUES ($1)", ("0001_seed",)),
         ]
 
 
@@ -182,7 +182,7 @@ class TestRunnerRunPythonDispatch:
         assert raw.executed == [
             (_CREATE_TRACKING_SQL, ()),
             (_CREATE_TRACKING_SQL, ()),
-            ("INSERT INTO norm_migrations (name) VALUES ($1)", ("0001_backfill",)),
+            ("INSERT INTO d2_migrations (name) VALUES ($1)", ("0001_backfill",)),
         ]
 
 
@@ -216,7 +216,7 @@ class TestRollbackRunSQL:
             (_CREATE_TRACKING_SQL, ()),
             ("DELETE FROM foo WHERE id = 1", ()),
             ("DELETE FROM bar", ()),
-            ("DELETE FROM norm_migrations WHERE name = $1", ("0001_seed",)),
+            ("DELETE FROM d2_migrations WHERE name = $1", ("0001_seed",)),
         ]
 
     @pytest.mark.asyncio
@@ -264,7 +264,7 @@ class TestRollbackRunPython:
         assert raw.executed == [
             (_CREATE_TRACKING_SQL, ()),
             (_CREATE_TRACKING_SQL, ()),
-            ("DELETE FROM norm_migrations WHERE name = $1", ("0001_backfill",)),
+            ("DELETE FROM d2_migrations WHERE name = $1", ("0001_backfill",)),
         ]
 
     @pytest.mark.asyncio
@@ -289,7 +289,7 @@ class TestRollbackRunPython:
 class TestCheckDdlLint:
     def _setup(self, tmp_path: Path, mig_body: str) -> None:
         (tmp_path / "models.py").write_text("")
-        (tmp_path / "pyproject.toml").write_text("[tool.norm]\n")
+        (tmp_path / "pyproject.toml").write_text("[tool.d2]\n")
         migs = tmp_path / "migrations"
         migs.mkdir()
         (migs / "0001_seed.py").write_text(mig_body)
@@ -302,13 +302,13 @@ class TestCheckDdlLint:
     ) -> None:
         import sys
 
-        from norm.migrations.__main__ import cmd_check
+        from d2.migrations.__main__ import cmd_check
 
         self._setup(
             tmp_path,
             (
-                "from norm.migrations import Migration\n"
-                "from norm.migrations.operations import RunSQL\n"
+                "from d2.migrations import Migration\n"
+                "from d2.migrations.operations import RunSQL\n"
                 "class Migration(Migration):\n"
                 '    name = "0001_seed"\n'
                 "    operations = [RunSQL(sql='ALTER TABLE foo ADD COLUMN x INT')]\n"
@@ -333,13 +333,13 @@ class TestCheckDdlLint:
     ) -> None:
         import sys
 
-        from norm.migrations.__main__ import cmd_check
+        from d2.migrations.__main__ import cmd_check
 
         self._setup(
             tmp_path,
             (
-                "from norm.migrations import Migration\n"
-                "from norm.migrations.operations import RunSQL\n"
+                "from d2.migrations import Migration\n"
+                "from d2.migrations.operations import RunSQL\n"
                 "class Migration(Migration):\n"
                 '    name = "0001_seed"\n'
                 "    operations = [RunSQL(sql='INSERT INTO foo (id) VALUES (1)')]\n"
@@ -361,7 +361,7 @@ class TestCheckDdlLint:
     ) -> None:
         import sys
 
-        from norm.migrations.__main__ import cmd_check
+        from d2.migrations.__main__ import cmd_check
 
         for kw in ("CREATE INDEX foo_x ON foo (x)", "DROP TABLE foo", "TRUNCATE foo"):
             # Fresh tmp dir per keyword via subfolder.
@@ -370,8 +370,8 @@ class TestCheckDdlLint:
             self._setup(
                 sub,
                 (
-                    "from norm.migrations import Migration\n"
-                    "from norm.migrations.operations import RunSQL\n"
+                    "from d2.migrations import Migration\n"
+                    "from d2.migrations.operations import RunSQL\n"
                     "class Migration(Migration):\n"
                     '    name = "0001_seed"\n'
                     f"    operations = [RunSQL(sql={kw!r})]\n"
@@ -393,15 +393,15 @@ class TestCodegenPreservesEscapeHatches:
         """Replay must treat RunSQL as a no-op for state, so codegen sees no drift."""
         import sys
 
-        from norm.migrations.__main__ import cmd_make
+        from d2.migrations.__main__ import cmd_make
 
         (tmp_path / "models.py").write_text("")
-        (tmp_path / "pyproject.toml").write_text("[tool.norm]\n")
+        (tmp_path / "pyproject.toml").write_text("[tool.d2]\n")
         migs = tmp_path / "migrations"
         migs.mkdir()
         (migs / "0001_seed.py").write_text(
-            "from norm.migrations import Migration\n"
-            "from norm.migrations.operations import RunSQL\n"
+            "from d2.migrations import Migration\n"
+            "from d2.migrations.operations import RunSQL\n"
             "class Migration(Migration):\n"
             '    name = "0001_seed"\n'
             "    operations = [RunSQL(sql='INSERT INTO foo (id) VALUES (1)')]\n"

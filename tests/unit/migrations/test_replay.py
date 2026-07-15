@@ -4,13 +4,13 @@ from pathlib import Path
 
 import pytest
 
-from norm.migrations import Migration
-from norm.migrations.replay import load_migration
+from d2.migrations import Migration
+from d2.migrations.replay import load_migration
 
 
 MIGRATION_SOURCE = '''
-from norm.migrations import Migration
-from norm.migrations.operations import CreateTable, ColumnDef
+from d2.migrations import Migration
+from d2.migrations.operations import CreateTable, ColumnDef
 
 
 class Migration(Migration):
@@ -44,8 +44,8 @@ class TestLoadMigration:
 
 
 REPLAY_0001 = '''
-from norm.migrations import Migration
-from norm.migrations.operations import CreateTable, ColumnDef
+from d2.migrations import Migration
+from d2.migrations.operations import CreateTable, ColumnDef
 
 
 class Migration(Migration):
@@ -60,8 +60,8 @@ class Migration(Migration):
 '''
 
 REPLAY_0002 = '''
-from norm.migrations import Migration
-from norm.migrations.operations import DropTable
+from d2.migrations import Migration
+from d2.migrations.operations import DropTable
 
 
 class Migration(Migration):
@@ -72,7 +72,7 @@ class Migration(Migration):
 
 class TestReplayMigrations:
     def test_reduces_files_in_sorted_order(self, tmp_path: Path):
-        from norm.migrations.replay import replay_migrations
+        from d2.migrations.replay import replay_migrations
 
         (tmp_path / "0001_initial.py").write_text(REPLAY_0001)
         (tmp_path / "0002_drop.py").write_text(REPLAY_0002)
@@ -81,7 +81,7 @@ class TestReplayMigrations:
         assert state.tables == {}
 
     def test_state_reflects_partial_replay(self, tmp_path: Path):
-        from norm.migrations.replay import replay_migrations
+        from d2.migrations.replay import replay_migrations
 
         (tmp_path / "0001_initial.py").write_text(REPLAY_0001)
         state = replay_migrations(sorted(tmp_path.glob("*.py")))

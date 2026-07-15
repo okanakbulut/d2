@@ -4,7 +4,7 @@ description: "CTEs, JSON output, prefetch, window functions, and scalar subqueri
 ---
 
 ```python
->>> from norm import Table, Field, PrimaryKey, Unique, field, TableMeta, With, db
+>>> from d2 import Table, Field, PrimaryKey, Unique, field, TableMeta, With, db
 >>> class User(Table):
 ...     id:    PrimaryKey[int] = field(default=db.serial())
 ...     name:  Field[str]
@@ -106,7 +106,7 @@ Pass `raw=True` to cast the result to `::text`:
 
 ```
 
-When executing via `AsyncConnection.fetch()`, norm auto-registers a JSON codec so the result is decoded into your `result_type` directly.
+When executing via `AsyncConnection.fetch()`, d2 auto-registers a JSON codec so the result is decoded into your `result_type` directly.
 
 ### prefetch() — nested JSON aggregation
 
@@ -120,7 +120,7 @@ When executing via `AsyncConnection.fetch()`, norm auto-registers a JSON codec s
 
 ```
 
-For a single-row prefetch (child limited to 1 row), norm emits `row_to_json` instead of `json_agg`:
+For a single-row prefetch (child limited to 1 row), d2 emits `row_to_json` instead of `json_agg`:
 
 ```python
 >>> latest_post = Post.select(Post.title).order_by(Post.id.desc()).limit(1).aliased("latest_post")

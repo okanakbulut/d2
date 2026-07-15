@@ -1,5 +1,5 @@
 """Unit tests for INSERT … ON CONFLICT (UPSERT) query building."""
-from norm import excluded
+from d2 import excluded
 from .conftest import Users
 
 

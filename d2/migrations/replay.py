@@ -12,9 +12,9 @@ def load_migration(path: Path) -> type[Migration]:
     """Import a migration file by path and return its `Migration` subclass.
 
     Looks for a class named `Migration` in the loaded module that is a strict
-    subclass of `norm.migrations.Migration`.
+    subclass of `d2.migrations.Migration`.
     """
-    spec = importlib.util.spec_from_file_location(f"_norm_mig_{path.stem}", path)
+    spec = importlib.util.spec_from_file_location(f"_d2_mig_{path.stem}", path)
     if spec is None or spec.loader is None:
         raise ImportError(f"cannot load migration file: {path}")
     module = importlib.util.module_from_spec(spec)

@@ -563,17 +563,17 @@ def _setup_table(cls: Any) -> None:
     register(cls)
 
 
-class NormMeta(type):
+class D2Meta(type):
     def __new__(
         mcs,
         name: str,
         bases: tuple[type, ...],
         namespace: dict[str, Any],
         **kwargs: Any,
-    ) -> "NormMeta":
+    ) -> "D2Meta":
         view_query = kwargs.pop("query", None)
         cls = super().__new__(mcs, name, bases, namespace, **kwargs)
-        if "__table__" not in namespace and any(isinstance(b, NormMeta) for b in bases):
+        if "__table__" not in namespace and any(isinstance(b, D2Meta) for b in bases):
             _setup_table(cls)
             if view_query is not None:
                 _validate_view_columns(cls, view_query)
@@ -613,8 +613,8 @@ def _validate_view_columns(cls: type, query: Any) -> None:
         )
 
 
-class Entity(metaclass=NormMeta):
-    """Base for all norm-managed database objects. Do not use directly — subclass Table or View."""
+class Entity(metaclass=D2Meta):
+    """Base for all d2-managed database objects. Do not use directly — subclass Table or View."""
 
     __table__: ClassVar[pypika.Table]
     __fields__: ClassVar[tuple[Field[Any], ...]]
@@ -651,7 +651,7 @@ class Entity(metaclass=NormMeta):
         for attr, val in vars(cls).items():
             if isinstance(val, Field):
                 ns[attr] = val
-        return cast(type[Self], NormMeta(cls.__name__, (cls,), ns))
+        return cast(type[Self], D2Meta(cls.__name__, (cls,), ns))
 
     @classmethod
     def aliased(cls, alias: str) -> type[typing.Any]:
@@ -707,7 +707,7 @@ class Entity(metaclass=NormMeta):
                     new_fields.append(new_proxy)
             ns["__fields__"] = tuple(new_fields)
 
-        return cast(type[Self], NormMeta(cls.__name__, (cls,), ns))
+        return cast(type[Self], D2Meta(cls.__name__, (cls,), ns))
 
 
 class Selectable(Entity):
@@ -817,7 +817,7 @@ class Selectable(Entity):
         for attr, val in vars(cls).items():
             if isinstance(val, Field):
                 ns[attr] = val
-        return cast(type[Self], NormMeta(cls.__name__, (cls,), ns))
+        return cast(type[Self], D2Meta(cls.__name__, (cls,), ns))
 
     @classmethod
     def union(cls, other: type[Selectable], *, all: bool = False) -> type[Self]:
@@ -987,5 +987,5 @@ class Table(Selectable, Writable):
 class View(Selectable):
     """Read-only database view or table."""
 
-    # Populated by ``NormMeta.__new__`` when ``query=`` is supplied.
+    # Populated by ``D2Meta.__new__`` when ``query=`` is supplied.
     __view_query__: ClassVar[Any] = None

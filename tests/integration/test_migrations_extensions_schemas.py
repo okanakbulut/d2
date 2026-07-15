@@ -16,9 +16,9 @@ import pytest
 
 
 MODELS_SOURCE = '''
-from norm.schema import Table, Field, PrimaryKey
-from norm.model import field, TableMeta
-from norm import db
+from d2.schema import Table, Field, PrimaryKey
+from d2.model import field, TableMeta
+from d2 import db
 
 
 class IssueOneFourSixEvent(Table):
@@ -33,13 +33,13 @@ class IssueOneFourSixEvent(Table):
 
 
 PYPROJECT = """
-[tool.norm]
+[tool.d2]
 migrations_dir = "migrations"
 models = "models"
 """
 
 
-PG_DSN = os.getenv("NORM_TEST_DSN", "postgresql://norm:norm@localhost:5432/norm_test")
+PG_DSN = os.getenv("D2_TEST_DSN", "postgresql://d2:d2@localhost:5432/d2_test")
 
 
 def _run_cli(workdir: Path, *args: str) -> subprocess.CompletedProcess:
@@ -47,7 +47,7 @@ def _run_cli(workdir: Path, *args: str) -> subprocess.CompletedProcess:
     env = os.environ.copy()
     env["PYTHONPATH"] = f"{workdir}{os.pathsep}{repo_root}"
     return subprocess.run(
-        [sys.executable, "-m", "norm.migrations", *args],
+        [sys.executable, "-m", "d2.migrations", *args],
         cwd=workdir,
         env=env,
         capture_output=True,
@@ -88,7 +88,7 @@ async def test_extensions_and_schemas_end_to_end(
     # not drop it here — the migration's `apply` uses IF NOT EXISTS anyway).
     await pg_conn.execute("DROP TABLE IF EXISTS audit_146.audit_events_146")
     await pg_conn.execute("DROP SCHEMA IF EXISTS audit_146 CASCADE")
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_migrations")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_migrations")
 
     (tmp_path / "pyproject.toml").write_text(PYPROJECT)
     (tmp_path / "models.py").write_text(MODELS_SOURCE)
@@ -123,4 +123,4 @@ async def test_extensions_and_schemas_end_to_end(
     # cleanup
     await pg_conn.execute("DROP TABLE IF EXISTS audit_146.audit_events_146")
     await pg_conn.execute("DROP SCHEMA IF EXISTS audit_146 CASCADE")
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_migrations")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_migrations")

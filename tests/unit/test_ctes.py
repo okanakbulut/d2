@@ -1,6 +1,6 @@
 """Unit tests for With — named and recursive CTEs."""
 
-from norm import With
+from d2 import With
 from .conftest import Users, Posts, Orders, Employees
 
 

@@ -5,8 +5,8 @@ from typing import Any
 import msgspec
 import pytest
 
-from norm import db
-from norm import AsyncConnection, TableMeta, Table, PrimaryKey, Field, field, With
+from d2 import db
+from d2 import AsyncConnection, TableMeta, Table, PrimaryKey, Field, field, With
 
 
 class Employees(Table):

@@ -3,8 +3,8 @@ column aliasing, arithmetic expressions, and insert."""
 
 import pytest
 
-from norm import TableMeta, Table
-from norm.schema import Field, PrimaryKey
+from d2 import TableMeta, Table
+from d2.schema import Field, PrimaryKey
 from .conftest import Users, UserModelExplicit
 
 

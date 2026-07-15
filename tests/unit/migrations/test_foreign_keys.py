@@ -4,11 +4,11 @@ from pathlib import Path
 
 import pytest
 
-from norm.migrations.snapshot import models_to_schema_state
-from norm.migrations.state import ForeignKeyConstraint
-from norm.model import field
-from norm.schema import ForeignKey, PrimaryKey, Table
-from norm import db
+from d2.migrations.snapshot import models_to_schema_state
+from d2.migrations.state import ForeignKeyConstraint
+from d2.model import field
+from d2.schema import ForeignKey, PrimaryKey, Table
+from d2 import db
 
 
 class FkOrg(Table):
@@ -76,7 +76,7 @@ class TestSnapshotForeignKeys:
 
 class TestAddConstraintForeignKeyDDL:
     def test_to_ddl_fk_with_on_delete_and_on_update(self):
-        from norm.migrations.operations import AddConstraint
+        from d2.migrations.operations import AddConstraint
 
         op = AddConstraint(
             table="users",
@@ -103,7 +103,7 @@ class TestAddConstraintForeignKeyDDL:
         assert op.to_ddl() == expected
 
     def test_to_ddl_fk_without_on_delete_or_on_update(self):
-        from norm.migrations.operations import AddConstraint
+        from d2.migrations.operations import AddConstraint
 
         op = AddConstraint(
             table="users",
@@ -128,8 +128,8 @@ class TestAddConstraintForeignKeyDDL:
         assert op.to_ddl() == expected
 
 
-EXPECTED_CODEGEN_FK = '''from norm.migrations import Migration
-from norm.migrations.operations import AddColumn, AddConstraint, AlterColumnType, ColumnDef, CreateExtension, CreateIndex, CreateSchema, CreateTable, CreateView, DropColumn, DropColumnDefault, DropColumnNotNull, DropConstraint, DropExtension, DropIndex, DropSchema, DropTable, DropView, RenameColumn, SetColumnDefault, SetColumnNotNull
+EXPECTED_CODEGEN_FK = '''from d2.migrations import Migration
+from d2.migrations.operations import AddColumn, AddConstraint, AlterColumnType, ColumnDef, CreateExtension, CreateIndex, CreateSchema, CreateTable, CreateView, DropColumn, DropColumnDefault, DropColumnNotNull, DropConstraint, DropExtension, DropIndex, DropSchema, DropTable, DropView, RenameColumn, SetColumnDefault, SetColumnNotNull
 
 
 class Migration(Migration):
@@ -146,8 +146,8 @@ class Migration(Migration):
 
 class TestCodegenForeignKey:
     def test_renders_foreign_key_constraint_dict_with_all_fields(self, tmp_path: Path) -> None:
-        from norm.migrations.codegen import make_migration
-        from norm.migrations.operations import AddConstraint, DropConstraint, Operation
+        from d2.migrations.codegen import make_migration
+        from d2.migrations.operations import AddConstraint, DropConstraint, Operation
 
         forward: list[Operation] = [
             AddConstraint(
@@ -181,7 +181,7 @@ class TestCodegenForeignKey:
 
 class TestForeignKeyAutoNameTooLong:
     def test_auto_fk_name_too_long_raises_pointing_at_name_kwarg(self):
-        from norm.migrations.naming import (
+        from d2.migrations.naming import (
             IdentifierTooLongError,
             auto_fk_name,
         )
@@ -194,14 +194,14 @@ class TestForeignKeyAutoNameTooLong:
 
 class TestDiffForeignKeyDeferredOrdering:
     def test_fk_add_constraints_emitted_after_all_create_tables(self):
-        from norm.migrations.draft import diff_states
-        from norm.migrations.operations import (
+        from d2.migrations.draft import diff_states
+        from d2.migrations.operations import (
             AddConstraint,
             ColumnDef,
             CreateTable,
             DropTable,
         )
-        from norm.migrations.state import (
+        from d2.migrations.state import (
             ColumnState,
             ForeignKeyConstraint,
             SchemaState,
@@ -258,14 +258,14 @@ class TestDiffForeignKeyDeferredOrdering:
 
     def test_fk_add_constraints_deferred_when_multiple_tables_have_fks(self):
         """If two new tables both have FKs, ALL CreateTables come first, THEN all FKs."""
-        from norm.migrations.draft import diff_states
-        from norm.migrations.operations import (
+        from d2.migrations.draft import diff_states
+        from d2.migrations.operations import (
             AddConstraint,
             ColumnDef,
             CreateTable,
             DropTable,
         )
-        from norm.migrations.state import (
+        from d2.migrations.state import (
             ColumnState,
             ForeignKeyConstraint,
             SchemaState,
@@ -324,9 +324,9 @@ class TestDiffForeignKeyDeferredOrdering:
         ]
 
     def test_new_fk_on_existing_table_yields_add_and_reverse_drop(self):
-        from norm.migrations.draft import diff_states
-        from norm.migrations.operations import AddConstraint, DropConstraint
-        from norm.migrations.state import (
+        from d2.migrations.draft import diff_states
+        from d2.migrations.operations import AddConstraint, DropConstraint
+        from d2.migrations.state import (
             ColumnState,
             ForeignKeyConstraint,
             SchemaState,

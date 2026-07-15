@@ -1,9 +1,9 @@
 ---
-title: Norm Developer Guide
+title: d2 Developer Guide
 description: "Async-first PostgreSQL ORM for Python — declarative schema, composable query builder, integrated migrations."
 ---
 
-Norm is a Python ORM for PostgreSQL. It provides:
+d2 is a Python ORM for PostgreSQL. It provides:
 
 - **Declarative schema** — define tables and views as Python classes with type annotations
 - **Composable query builder** — immutable, chainable SELECT/INSERT/UPDATE/DELETE builders
@@ -22,12 +22,12 @@ Norm is a Python ORM for PostgreSQL. It provides:
 | [Connection](connection.md) | `AsyncConnection`, `fetch` / `execute` / `fetchval`, transactions |
 | [Migrations](migrations.md) | CLI workflow, `Migration` class, all 22 operations |
 | [Migrations Internals](migrations-internals.md) | `SchemaState`, `SchemaPipeline`, `MigrationRunner`, codegen, lint |
-| [Configuration](configuration.md) | `pyproject.toml`, `NormConfig`, model discovery |
+| [Configuration](configuration.md) | `pyproject.toml`, `D2Config`, model discovery |
 
 ## Quick example
 
 ```python
->>> from norm import Table, Field, PrimaryKey, Unique, field, TableMeta, db
+>>> from d2 import Table, Field, PrimaryKey, Unique, field, TableMeta, db
 >>> class User(Table):
 ...     id:    PrimaryKey[int] = field(default=db.serial())
 ...     name:  Field[str]

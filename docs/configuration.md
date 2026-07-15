@@ -1,14 +1,14 @@
 ---
 title: Configuration
-description: "The [tool.norm] pyproject.toml section, NormConfig, and model discovery."
+description: "The [tool.d2] pyproject.toml section, D2Config, and model discovery."
 ---
 
 ## pyproject.toml
 
-Norm reads its configuration from the `[tool.norm]` table:
+d2 reads its configuration from the `[tool.d2]` table:
 
 ```toml
-[tool.norm]
+[tool.d2]
 migrations_dir = "migrations"   # path to migration files directory
 models = "myapp.models"         # dotted Python import path for Table/View definitions
 ```
@@ -22,14 +22,14 @@ Both keys are optional:
 
 ---
 
-## NormConfig
+## D2Config
 
-`NormConfig` is the dataclass that holds resolved configuration. Use it when calling migration internals programmatically:
+`D2Config` is the dataclass that holds resolved configuration. Use it when calling migration internals programmatically:
 
 ```python
->>> from norm.migrations.config import NormConfig, load_config
+>>> from d2.migrations.config import D2Config, load_config
 >>> from pathlib import Path
->>> cfg = NormConfig(
+>>> cfg = D2Config(
 ...     migrations_dir=Path("migrations"),
 ...     models="myapp.models",
 ... )
@@ -56,11 +56,11 @@ PosixPath('migrations')
 
 ## Model discovery
 
-Norm discovers `Table` and `View` subclasses through a global registry (`MODEL_REGISTRY`) populated by `NormMeta.__new__` at class-definition time.
+d2 discovers `Table` and `View` subclasses through a global registry (`MODEL_REGISTRY`) populated by `D2Meta.__new__` at class-definition time.
 
 ```python
->>> from norm.migrations.registry import MODEL_REGISTRY
->>> from norm import Table, Field, PrimaryKey, field, db
+>>> from d2.migrations.registry import MODEL_REGISTRY
+>>> from d2 import Table, Field, PrimaryKey, field, db
 >>> class Widget(Table):
 ...     id:   PrimaryKey[int] = field(default=db.serial())
 ...     name: Field[str]
@@ -73,14 +73,14 @@ True
 `models_for(cfg)` imports the configured models module (which triggers registration) and returns the registered types:
 
 ```python
->>> from norm.migrations.discovery import models_for  # doctest: +SKIP
+>>> from d2.migrations.discovery import models_for  # doctest: +SKIP
 >>> tables = models_for(cfg)  # doctest: +SKIP
 
 ```
 
 ### Layout conventions
 
-Norm infers the Postgres schema from the module path when the word `models` appears in it:
+d2 infers the Postgres schema from the module path when the word `models` appears in it:
 
 ```
 myapp/
@@ -100,8 +100,8 @@ Override with `TableMeta(schema="...")` to disable inference.
 The `Dialect` protocol controls how parameterised placeholders are rendered. The only implementation is `PostgresDialect`, which emits `$1`, `$2`, … (the asyncpg / libpq format):
 
 ```python
->>> from norm.dialect import PostgresDialect
->>> from norm import Table, Field, PrimaryKey, field, TableMeta, db
+>>> from d2.dialect import PostgresDialect
+>>> from d2 import Table, Field, PrimaryKey, field, TableMeta, db
 >>> class MyTable(Table):
 ...     __meta__ = TableMeta(schema="public")
 ...     id:   PrimaryKey[int] = field(default=db.serial())

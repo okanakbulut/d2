@@ -3,7 +3,7 @@ title: Migrations Internals
 description: "SchemaState, SchemaPipeline, MigrationRunner, codegen, and lint."
 ---
 
-This page covers the underlying machinery. You generally interact with it only when building tooling on top of norm, writing custom diff logic, or running migrations programmatically.
+This page covers the underlying machinery. You generally interact with it only when building tooling on top of d2, writing custom diff logic, or running migrations programmatically.
 
 ---
 
@@ -12,7 +12,7 @@ This page covers the underlying machinery. You generally interact with it only w
 `SchemaState` is an in-memory representation of a Postgres schema. It is the common currency between the diff engine, the snapshot builder, and the replay system.
 
 ```python
->>> from norm.migrations.state import (
+>>> from d2.migrations.state import (
 ...     SchemaState, TableState, ColumnState,
 ...     UniqueConstraint, ForeignKeyConstraint, IndexDef, ViewState,
 ... )
@@ -57,7 +57,7 @@ True
 `ColumnDef` is an alias for `ColumnState` (kept for backward compatibility in migration files on disk).
 
 ```python
->>> from norm.migrations.operations import ColumnDef
+>>> from d2.migrations.operations import ColumnDef
 >>> ColumnDef is ColumnState
 True
 
@@ -89,7 +89,7 @@ ForeignKeyConstraint(name='fk_bar', columns=('user_id',), references_schema='pub
 `SchemaPipeline` computes the forward and reverse operation lists needed to evolve the current schema to the target schema.
 
 ```python
->>> from norm.migrations.pipeline import SchemaPipeline
+>>> from d2.migrations.pipeline import SchemaPipeline
 
 ```
 
@@ -129,7 +129,7 @@ False
 ## diff_states
 
 ```python
->>> from norm.migrations.draft import diff_states
+>>> from d2.migrations.draft import diff_states
 >>> forward, reverse = diff_states(
 ...     SchemaState(tables={}, extensions=set(), schemas=set()),
 ...     SchemaState(tables={}, extensions=set(), schemas=set()),
@@ -150,8 +150,8 @@ The diff engine compares two `SchemaState` objects and emits the minimum set of 
 Introspects `Table` / `View` class definitions and produces a `SchemaState`:
 
 ```python
->>> from norm.migrations.snapshot import models_to_schema_state
->>> from norm import Table, Field, PrimaryKey, Unique, field, TableMeta, db
+>>> from d2.migrations.snapshot import models_to_schema_state
+>>> from d2 import Table, Field, PrimaryKey, Unique, field, TableMeta, db
 >>> class UserM(Table):
 ...     __meta__ = TableMeta(schema="public")
 ...     id:    PrimaryKey[int] = field(default=db.serial())
@@ -194,7 +194,7 @@ Any other type raises `TypeError` with the offending `table.column` in the messa
 Builds a `SchemaState` by loading and replaying a list of migration files:
 
 ```python
->>> from norm.migrations.replay import replay_migrations
+>>> from d2.migrations.replay import replay_migrations
 >>> state = replay_migrations([])
 >>> state.tables
 {}
@@ -211,8 +211,8 @@ Manages applying and rolling back migrations against a live database.
 
 ```python
 >>> import asyncpg  # doctest: +SKIP
->>> from norm import AsyncConnection  # doctest: +SKIP
->>> from norm.migrations.runner import MigrationRunner  # doctest: +SKIP
+>>> from d2 import AsyncConnection  # doctest: +SKIP
+>>> from d2.migrations.runner import MigrationRunner  # doctest: +SKIP
 >>> raw = await asyncpg.connect("postgresql://localhost/mydb")  # doctest: +SKIP
 >>> conn = AsyncConnection(raw)  # doctest: +SKIP
 >>> runner = MigrationRunner(conn, migrations_dir="migrations")  # doctest: +SKIP
@@ -224,7 +224,7 @@ Manages applying and rolling back migrations against a live database.
 
 ```
 
-The runner creates and maintains the `norm_migrations` tracking table automatically.
+The runner creates and maintains the `d2_migrations` tracking table automatically.
 
 ---
 
@@ -233,7 +233,7 @@ The runner creates and maintains the `norm_migrations` tracking table automatica
 Generate a migration file from a list of forward and reverse operations:
 
 ```python
->>> from norm.migrations.codegen import make_migration  # doctest: +SKIP
+>>> from d2.migrations.codegen import make_migration  # doctest: +SKIP
 >>> from pathlib import Path  # doctest: +SKIP
 >>> path = make_migration(  # doctest: +SKIP
 ...     migrations_dir=Path("migrations"),
@@ -251,8 +251,8 @@ Generate a migration file from a list of forward and reverse operations:
 ## Lint checks
 
 ```python
->>> from norm.migrations.lint import check_atomic_mismatch, check_run_sql_ddl  # doctest: +SKIP
->>> from norm.migrations.config import load_config  # doctest: +SKIP
+>>> from d2.migrations.lint import check_atomic_mismatch, check_run_sql_ddl  # doctest: +SKIP
+>>> from d2.migrations.config import load_config  # doctest: +SKIP
 >>> from pathlib import Path  # doctest: +SKIP
 >>> cfg = load_config(Path("."))  # doctest: +SKIP
 >>> issues = check_atomic_mismatch(cfg)  # doctest: +SKIP
@@ -265,15 +265,15 @@ Generate a migration file from a list of forward and reverse operations:
 ## Model discovery
 
 ```python
->>> from norm.migrations.discovery import (
+>>> from d2.migrations.discovery import (
 ...     import_models_module,
 ...     models_for,
 ...     existing_migration_files,
 ...     next_number,
 ... )
->>> from norm.migrations.config import NormConfig
+>>> from d2.migrations.config import D2Config
 >>> from pathlib import Path
->>> cfg = NormConfig(migrations_dir=Path("migrations"), models="myapp.models")
+>>> cfg = D2Config(migrations_dir=Path("migrations"), models="myapp.models")
 >>> existing_migration_files(Path("migrations"))
 []
 >>> next_number(Path("migrations"))

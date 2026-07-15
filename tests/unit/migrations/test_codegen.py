@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from norm.migrations.codegen import make_migration
-from norm.migrations.operations import (
+from d2.migrations.codegen import make_migration
+from d2.migrations.operations import (
     AddColumn,
     AlterColumnType,
     ColumnDef,
@@ -19,8 +19,8 @@ from norm.migrations.operations import (
 )
 
 
-EXPECTED_CREATE_SINGLE = '''from norm.migrations import Migration
-from norm.migrations.operations import AddColumn, AddConstraint, AlterColumnType, ColumnDef, CreateExtension, CreateIndex, CreateSchema, CreateTable, CreateView, DropColumn, DropColumnDefault, DropColumnNotNull, DropConstraint, DropExtension, DropIndex, DropSchema, DropTable, DropView, RenameColumn, SetColumnDefault, SetColumnNotNull
+EXPECTED_CREATE_SINGLE = '''from d2.migrations import Migration
+from d2.migrations.operations import AddColumn, AddConstraint, AlterColumnType, ColumnDef, CreateExtension, CreateIndex, CreateSchema, CreateTable, CreateView, DropColumn, DropColumnDefault, DropColumnNotNull, DropConstraint, DropExtension, DropIndex, DropSchema, DropTable, DropView, RenameColumn, SetColumnDefault, SetColumnNotNull
 
 
 class Migration(Migration):
@@ -42,8 +42,8 @@ class Migration(Migration):
 '''
 
 
-EXPECTED_AUTO_MULTI = '''from norm.migrations import Migration
-from norm.migrations.operations import AddColumn, AddConstraint, AlterColumnType, ColumnDef, CreateExtension, CreateIndex, CreateSchema, CreateTable, CreateView, DropColumn, DropColumnDefault, DropColumnNotNull, DropConstraint, DropExtension, DropIndex, DropSchema, DropTable, DropView, RenameColumn, SetColumnDefault, SetColumnNotNull
+EXPECTED_AUTO_MULTI = '''from d2.migrations import Migration
+from d2.migrations.operations import AddColumn, AddConstraint, AlterColumnType, ColumnDef, CreateExtension, CreateIndex, CreateSchema, CreateTable, CreateView, DropColumn, DropColumnDefault, DropColumnNotNull, DropConstraint, DropExtension, DropIndex, DropSchema, DropTable, DropView, RenameColumn, SetColumnDefault, SetColumnNotNull
 
 
 class Migration(Migration):
@@ -168,8 +168,8 @@ class TestMakeMigration:
         assert path.name == "0004_my_label.py"
 
 
-EXPECTED_COLUMN_OPS = '''from norm.migrations import Migration
-from norm.migrations.operations import AddColumn, AddConstraint, AlterColumnType, ColumnDef, CreateExtension, CreateIndex, CreateSchema, CreateTable, CreateView, DropColumn, DropColumnDefault, DropColumnNotNull, DropConstraint, DropExtension, DropIndex, DropSchema, DropTable, DropView, RenameColumn, SetColumnDefault, SetColumnNotNull
+EXPECTED_COLUMN_OPS = '''from d2.migrations import Migration
+from d2.migrations.operations import AddColumn, AddConstraint, AlterColumnType, ColumnDef, CreateExtension, CreateIndex, CreateSchema, CreateTable, CreateView, DropColumn, DropColumnDefault, DropColumnNotNull, DropConstraint, DropExtension, DropIndex, DropSchema, DropTable, DropView, RenameColumn, SetColumnDefault, SetColumnNotNull
 
 
 class Migration(Migration):
@@ -232,7 +232,7 @@ class TestMakeMigrationColumnOps:
         assert path.read_text() == EXPECTED_COLUMN_OPS
 
 
-from norm.migrations.operations import (
+from d2.migrations.operations import (
     CreateExtension,
     CreateSchema,
     DropExtension,
@@ -240,8 +240,8 @@ from norm.migrations.operations import (
 )
 
 
-EXPECTED_EXT_SCHEMA = '''from norm.migrations import Migration
-from norm.migrations.operations import AddColumn, AddConstraint, AlterColumnType, ColumnDef, CreateExtension, CreateIndex, CreateSchema, CreateTable, CreateView, DropColumn, DropColumnDefault, DropColumnNotNull, DropConstraint, DropExtension, DropIndex, DropSchema, DropTable, DropView, RenameColumn, SetColumnDefault, SetColumnNotNull
+EXPECTED_EXT_SCHEMA = '''from d2.migrations import Migration
+from d2.migrations.operations import AddColumn, AddConstraint, AlterColumnType, ColumnDef, CreateExtension, CreateIndex, CreateSchema, CreateTable, CreateView, DropColumn, DropColumnDefault, DropColumnNotNull, DropConstraint, DropExtension, DropIndex, DropSchema, DropTable, DropView, RenameColumn, SetColumnDefault, SetColumnNotNull
 
 
 class Migration(Migration):

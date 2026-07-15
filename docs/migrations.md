@@ -3,30 +3,30 @@ title: Migrations
 description: "CLI workflow, the Migration class, and all 22 operations."
 ---
 
-Norm's migration system compares your Table definitions against the history of applied migrations to produce a diff, then generates versioned Python files you can review, commit, and apply.
+d2's migration system compares your Table definitions against the history of applied migrations to produce a diff, then generates versioned Python files you can review, commit, and apply.
 
 ## Workflow
 
 ```
 1. Edit Table / View definitions in Python
-2. python -m norm.migrations make   →  generates migrations/NNNN_<label>.py
+2. python -m d2.migrations make   →  generates migrations/NNNN_<label>.py
 3. Review the generated file
-4. python -m norm.migrations apply  →  runs pending files against the DB
-5. python -m norm.migrations rollback <name>  →  reverses one migration
+4. python -m d2.migrations apply  →  runs pending files against the DB
+5. python -m d2.migrations rollback <name>  →  reverses one migration
 ```
 
 ---
 
 ## CLI reference
 
-All commands read `[tool.norm]` from `pyproject.toml` by default. Flags override the config.
+All commands read `[tool.d2]` from `pyproject.toml` by default. Flags override the config.
 
 ### make
 
 Diff the current schema against applied migrations and write a new migration file.
 
 ```bash
-python -m norm.migrations make \
+python -m d2.migrations make \
   [--migrations-dir ./migrations] \
   [--models myapp.models] \
   [--label my_description]
@@ -39,7 +39,7 @@ If there are no schema changes, the command exits without writing a file.
 Validate existing migration files (lint checks) and report schema drift without writing anything.
 
 ```bash
-python -m norm.migrations check \
+python -m d2.migrations check \
   [--migrations-dir ./migrations] \
   [--models myapp.models]
 ```
@@ -53,7 +53,7 @@ Checks performed:
 Apply all pending migrations to the database in name-sorted order.
 
 ```bash
-python -m norm.migrations apply \
+python -m d2.migrations apply \
   --dsn postgresql://user:pass@host/dbname \
   [--migrations-dir ./migrations] \
   [--models myapp.models]
@@ -64,7 +64,7 @@ python -m norm.migrations apply \
 Reverse the most recently applied migration. The migration must have `reverse_operations` defined.
 
 ```bash
-python -m norm.migrations rollback <migration-name> \
+python -m d2.migrations rollback <migration-name> \
   --dsn postgresql://user:pass@host/dbname \
   [--force]   # skip the "must be most recent" guard
 ```
@@ -76,8 +76,8 @@ python -m norm.migrations rollback <migration-name> \
 A generated migration file looks like this:
 
 ```python
->>> from norm.migrations import Migration
->>> from norm.migrations.operations import (
+>>> from d2.migrations import Migration
+>>> from d2.migrations.operations import (
 ...     CreateTable, DropTable, AddConstraint, ColumnDef,
 ... )
 >>> class Migration0001(Migration):
@@ -131,7 +131,7 @@ Set `atomic = False` when operations cannot run inside a transaction — for exa
 ### Table operations
 
 ```python
->>> from norm.migrations.operations import (
+>>> from d2.migrations.operations import (
 ...     CreateTable, DropTable, AddColumn, DropColumn, RenameColumn,
 ...     AlterColumnType, SetColumnNotNull, DropColumnNotNull,
 ...     SetColumnDefault, DropColumnDefault, AddConstraint, DropConstraint,
@@ -264,7 +264,7 @@ When `concurrent=True`, the migration **must** set `atomic = False`.
 
 ### Escape hatches
 
-Use these only for data migrations or operations that norm's DDL system cannot express.
+Use these only for data migrations or operations that d2's DDL system cannot express.
 
 ```python
 >>> RunSQL(
@@ -301,10 +301,10 @@ RunSQL(sql='UPDATE users SET score = 0 WHERE score IS NULL', reverse_sql='UPDATE
 
 ## Tracking table
 
-Norm records applied migrations in `norm_migrations` (created automatically):
+d2 records applied migrations in `d2_migrations` (created automatically):
 
 ```sql
-CREATE TABLE IF NOT EXISTS norm_migrations (
+CREATE TABLE IF NOT EXISTS d2_migrations (
     id         SERIAL PRIMARY KEY,
     name       TEXT NOT NULL UNIQUE,
     applied_at TIMESTAMPTZ NOT NULL DEFAULT now()

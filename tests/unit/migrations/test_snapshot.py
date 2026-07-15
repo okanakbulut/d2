@@ -7,10 +7,10 @@ from uuid import UUID
 
 import pytest
 
-from norm import db
-from norm.migrations.snapshot import models_to_schema_state
-from norm.model import TableMeta, field
-from norm.schema import Field, PrimaryKey, Table, View
+from d2 import db
+from d2.migrations.snapshot import models_to_schema_state
+from d2.model import TableMeta, field
+from d2.schema import Field, PrimaryKey, Table, View
 
 
 class TestModelsToSchemaState:

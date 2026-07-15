@@ -5,18 +5,18 @@ from pathlib import Path
 
 import pytest
 
-from norm.migrations.__main__ import cmd_check, cmd_make
+from d2.migrations.__main__ import cmd_check, cmd_make
 
 
 def _write_models(tmp_path: Path, source: str) -> None:
     (tmp_path / "models.py").write_text(source)
-    (tmp_path / "pyproject.toml").write_text("[tool.norm]\n")
+    (tmp_path / "pyproject.toml").write_text("[tool.d2]\n")
 
 
 MODEL_SIMPLE = """
-from norm import db
-from norm.schema import Table, Field, PrimaryKey
-from norm.model import field
+from d2 import db
+from d2.schema import Table, Field, PrimaryKey
+from d2.model import field
 
 class CliWidget(Table):
     id: PrimaryKey[int] = field(default=db.serial())
@@ -29,7 +29,7 @@ class TestCmdMake:
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         (tmp_path / "models.py").write_text("")
-        (tmp_path / "pyproject.toml").write_text("[tool.norm]\n")
+        (tmp_path / "pyproject.toml").write_text("[tool.d2]\n")
         (tmp_path / "migrations").mkdir()
 
         sys.path.insert(0, str(tmp_path))
@@ -65,7 +65,7 @@ class TestCmdCheck:
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         (tmp_path / "models.py").write_text("")
-        (tmp_path / "pyproject.toml").write_text("[tool.norm]\n")
+        (tmp_path / "pyproject.toml").write_text("[tool.d2]\n")
         (tmp_path / "migrations").mkdir()
 
         sys.path.insert(0, str(tmp_path))

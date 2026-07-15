@@ -1,6 +1,6 @@
 """Unit tests for filter predicates: comparison, string, list, null, range, cross-column."""
 
-from norm.filter import Filter
+from d2.filter import Filter
 from .conftest import Users
 
 

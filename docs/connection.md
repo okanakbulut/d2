@@ -9,7 +9,7 @@ description: "AsyncConnection, fetch / execute / fetchval, and transactions."
 
 ```python
 >>> import asyncpg  # doctest: +SKIP
->>> from norm import AsyncConnection  # doctest: +SKIP
+>>> from d2 import AsyncConnection  # doctest: +SKIP
 >>> raw = await asyncpg.connect("postgresql://localhost/mydb")  # doctest: +SKIP
 >>> conn = AsyncConnection(raw)  # doctest: +SKIP
 
@@ -18,7 +18,7 @@ description: "AsyncConnection, fetch / execute / fetchval, and transactions."
 You can also pass a custom dialect (currently only `PostgresDialect` is implemented):
 
 ```python
->>> from norm.dialect import PostgresDialect  # doctest: +SKIP
+>>> from d2.dialect import PostgresDialect  # doctest: +SKIP
 >>> conn = AsyncConnection(raw, dialect=PostgresDialect())  # doctest: +SKIP
 
 ```
@@ -64,7 +64,7 @@ When the query ends with `.json()`, `fetch` decodes the JSON payload and deseria
 ...     name: str
 ...     posts: list[dict]
 ...
->>> from norm import Table, Field, PrimaryKey, field, With  # doctest: +SKIP
+>>> from d2 import Table, Field, PrimaryKey, field, With  # doctest: +SKIP
 >>> result = await conn.fetch(  # doctest: +SKIP
 ...     User.select(User.id, User.name).prefetch(
 ...         Post.select(Post.id, Post.title).aliased("posts")

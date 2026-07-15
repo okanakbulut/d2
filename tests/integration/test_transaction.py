@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from norm import AsyncConnection
+from d2 import AsyncConnection
 from .conftest import TxnAccounts
 
 

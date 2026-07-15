@@ -9,16 +9,16 @@ from typing import Any
 
 import pytest
 
-from norm import AsyncpgDriver
-from norm.migrations.runner import MigrationRunner
+from d2 import AsyncpgDriver
+from d2.migrations.runner import MigrationRunner
 
 
-PG_DSN = os.getenv("NORM_TEST_DSN", "postgresql://norm:norm@localhost:5432/norm_test")
+PG_DSN = os.getenv("D2_TEST_DSN", "postgresql://d2:d2@localhost:5432/d2_test")
 
 
 MIGRATION_0001 = '''
-from norm.migrations import Migration
-from norm.migrations.operations import CreateTable, ColumnDef, DropTable
+from d2.migrations import Migration
+from d2.migrations.operations import CreateTable, ColumnDef, DropTable
 
 
 class Migration(Migration):
@@ -26,7 +26,7 @@ class Migration(Migration):
     dependencies = []
     operations = [
         CreateTable(
-            table="norm_rb_widgets",
+            table="d2_rb_widgets",
             schema="public",
             columns={
                 "id": ColumnDef(type="BIGINT", nullable=False, primary_key=True),
@@ -35,25 +35,25 @@ class Migration(Migration):
         ),
     ]
     reverse_operations = [
-        DropTable(table="norm_rb_widgets", schema="public"),
+        DropTable(table="d2_rb_widgets", schema="public"),
     ]
 '''
 
 
 MIGRATION_0002 = '''
-from norm.migrations import Migration
-from norm.migrations.operations import AddColumn, DropColumn
+from d2.migrations import Migration
+from d2.migrations.operations import AddColumn, DropColumn
 
 
 class Migration(Migration):
     name = "0002_add_status"
     dependencies = ["0001_initial"]
     operations = [
-        AddColumn(table="norm_rb_widgets", column="status", type="TEXT",
+        AddColumn(table="d2_rb_widgets", column="status", type="TEXT",
                   nullable=True, default=None, schema="public"),
     ]
     reverse_operations = [
-        DropColumn(table="norm_rb_widgets", column="status", schema="public"),
+        DropColumn(table="d2_rb_widgets", column="status", schema="public"),
     ]
 '''
 
@@ -81,8 +81,8 @@ async def _column_exists(pg_conn: Any, schema: str, table: str, column: str) -> 
 async def test_rollback_second_migration_reverts_schema_and_tracking_row(
     pg_conn: Any, tmp_path: Path
 ) -> None:
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_rb_widgets")
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_migrations")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_rb_widgets")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_migrations")
 
     (tmp_path / "0001_initial.py").write_text(MIGRATION_0001)
     (tmp_path / "0002_add_status.py").write_text(MIGRATION_0002)
@@ -91,25 +91,25 @@ async def test_rollback_second_migration_reverts_schema_and_tracking_row(
     runner = MigrationRunner(conn=conn, migrations_dir=str(tmp_path))
     applied = await runner.apply()
     assert applied == ["0001_initial", "0002_add_status"]
-    assert await _column_exists(pg_conn, "public", "norm_rb_widgets", "status")
+    assert await _column_exists(pg_conn, "public", "d2_rb_widgets", "status")
 
     await runner.rollback("0002_add_status")
 
-    assert not await _column_exists(pg_conn, "public", "norm_rb_widgets", "status")
-    assert await _table_exists(pg_conn, "public", "norm_rb_widgets")
+    assert not await _column_exists(pg_conn, "public", "d2_rb_widgets", "status")
+    assert await _table_exists(pg_conn, "public", "d2_rb_widgets")
     applied_after = await runner.applied()
     assert applied_after == ["0001_initial"]
 
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_rb_widgets")
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_migrations")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_rb_widgets")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_migrations")
 
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_rollback_non_most_recent_without_force_refuses(
     pg_conn: Any, tmp_path: Path
 ) -> None:
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_rb_widgets")
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_migrations")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_rb_widgets")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_migrations")
 
     (tmp_path / "0001_initial.py").write_text(MIGRATION_0001)
     (tmp_path / "0002_add_status.py").write_text(MIGRATION_0002)
@@ -122,11 +122,11 @@ async def test_rollback_non_most_recent_without_force_refuses(
         await runner.rollback("0001_initial")
 
     # Schema unchanged: both table + status column still present, both rows still tracked.
-    assert await _column_exists(pg_conn, "public", "norm_rb_widgets", "status")
+    assert await _column_exists(pg_conn, "public", "d2_rb_widgets", "status")
     assert await runner.applied() == ["0001_initial", "0002_add_status"]
 
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_rb_widgets")
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_migrations")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_rb_widgets")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_migrations")
 
 
 def _run_cli(workdir: Path, *args: str) -> subprocess.CompletedProcess:
@@ -134,7 +134,7 @@ def _run_cli(workdir: Path, *args: str) -> subprocess.CompletedProcess:
     env = os.environ.copy()
     env["PYTHONPATH"] = f"{workdir}{os.pathsep}{repo_root}"
     return subprocess.run(
-        [sys.executable, "-m", "norm.migrations", *args],
+        [sys.executable, "-m", "d2.migrations", *args],
         cwd=workdir,
         env=env,
         capture_output=True,
@@ -146,11 +146,11 @@ def _run_cli(workdir: Path, *args: str) -> subprocess.CompletedProcess:
 async def test_cli_rollback_subcommand_dispatches(
     pg_conn: Any, tmp_path: Path
 ) -> None:
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_rb_widgets")
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_migrations")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_rb_widgets")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_migrations")
 
     (tmp_path / "pyproject.toml").write_text(
-        '[tool.norm]\nmigrations_dir = "migrations"\nmodels = "models"\n'
+        '[tool.d2]\nmigrations_dir = "migrations"\nmodels = "models"\n'
     )
     (tmp_path / "models.py").write_text("")
     migrations_dir = tmp_path / "migrations"
@@ -160,12 +160,12 @@ async def test_cli_rollback_subcommand_dispatches(
     conn = AsyncpgDriver(pg_conn)
     runner = MigrationRunner(conn=conn, migrations_dir=str(migrations_dir))
     await runner.apply()
-    assert await _table_exists(pg_conn, "public", "norm_rb_widgets")
+    assert await _table_exists(pg_conn, "public", "d2_rb_widgets")
 
     proc = _run_cli(tmp_path, "rollback", "0001_initial", "--dsn", PG_DSN)
     assert proc.returncode == 0, (proc.stdout, proc.stderr)
-    assert not await _table_exists(pg_conn, "public", "norm_rb_widgets")
+    assert not await _table_exists(pg_conn, "public", "d2_rb_widgets")
     assert await runner.applied() == []
 
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_rb_widgets")
-    await pg_conn.execute("DROP TABLE IF EXISTS public.norm_migrations")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_rb_widgets")
+    await pg_conn.execute("DROP TABLE IF EXISTS public.d2_migrations")

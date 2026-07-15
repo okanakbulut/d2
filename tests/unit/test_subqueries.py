@@ -1,7 +1,7 @@
 """Unit tests for aliased subqueries and scalar subqueries."""
 
-from norm.query import ScalarSubquery
-from norm.schema import Field
+from d2.query import ScalarSubquery
+from d2.schema import Field
 from .conftest import Users, Orders
 
 

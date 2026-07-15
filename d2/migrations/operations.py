@@ -22,7 +22,7 @@ from .state import (
     serial_display_type,
 )
 
-from norm.driver import Driver
+from d2.driver import Driver
 
 # Re-exported for callers that import these from operations.
 __all_aliases__ = ("ConstraintDict", "IndexDict")

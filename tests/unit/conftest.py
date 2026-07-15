@@ -1,6 +1,6 @@
 """Shared models for unit tests."""
 
-from norm import TableMeta, Field, PrimaryKey, Unique, Index, Table, db, field
+from d2 import TableMeta, Field, PrimaryKey, Unique, Index, Table, db, field
 
 
 class Users(Table):

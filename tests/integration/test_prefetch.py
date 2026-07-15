@@ -5,8 +5,8 @@ from typing import Any
 import msgspec
 import pytest
 
-from norm import db
-from norm import AsyncConnection, Table, PrimaryKey, Field, TableMeta, field
+from d2 import db
+from d2 import AsyncConnection, Table, PrimaryKey, Field, TableMeta, field
 
 
 class PfUsers(Table):

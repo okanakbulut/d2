@@ -3,7 +3,7 @@ requires = ["hatchling", "packaging"]
 build-backend = "hatchling.build"
 
 [project]
-name = "norm"
+name = "d2"
 version = "0.1.0"
 description = "Async-first PostgreSQL ORM with a composable query builder and integrated migrations"
 readme = "README.md"
@@ -17,10 +17,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://okanakbulut.github.io/norm/"
-Documentation = "https://okanakbulut.github.io/norm/"
-Repository = "https://github.com/okanakbulut/norm"
-Issues = "https://github.com/okanakbulut/norm/issues"
+Homepage = "https://okanakbulut.github.io/d2/"
+Documentation = "https://okanakbulut.github.io/d2/"
+Repository = "https://github.com/okanakbulut/d2"
+Issues = "https://github.com/okanakbulut/d2/issues"
 
 [dependency-groups]
 dev = [
@@ -32,7 +32,7 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["norm", "docs", "tests"]
+testpaths = ["d2", "docs", "tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 pythonpath = ["."]
@@ -46,3 +46,5 @@ addopts = [
     "--quiet",
     "--tb=long",
 ]
+[tool.hatch.build.targets.wheel]
+packages = ["d2"]

@@ -1,7 +1,7 @@
 """Unit tests for the Migration base class shape."""
 
-from norm.migrations import Migration
-from norm.migrations.operations import CreateTable, ColumnDef
+from d2.migrations import Migration
+from d2.migrations.operations import CreateTable, ColumnDef
 
 
 class TestMigrationBase:

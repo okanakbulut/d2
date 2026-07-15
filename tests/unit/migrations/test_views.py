@@ -1,7 +1,7 @@
 """Unit tests for View migration operations + diff (issue 145)."""
 
-from norm.migrations.operations import CreateView, DropView
-from norm.migrations.state import SchemaState, ViewState
+from d2.migrations.operations import CreateView, DropView
+from d2.migrations.state import SchemaState, ViewState
 
 
 class TestCreateViewToDdl:

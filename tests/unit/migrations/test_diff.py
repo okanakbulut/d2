@@ -1,7 +1,7 @@
 """Unit tests for diff_states and DropTable op."""
 
-from norm.migrations.draft import diff_states
-from norm.migrations.operations import (
+from d2.migrations.draft import diff_states
+from d2.migrations.operations import (
     AddColumn,
     AddConstraint,
     AlterColumnType,
@@ -18,7 +18,7 @@ from norm.migrations.operations import (
     SetColumnDefault,
     SetColumnNotNull,
 )
-from norm.migrations.state import ColumnState, ForeignKeyConstraint, SchemaState, TableState
+from d2.migrations.state import ColumnState, ForeignKeyConstraint, SchemaState, TableState
 
 
 class TestDropTable:

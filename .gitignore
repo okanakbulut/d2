@@ -16,3 +16,9 @@ htmlcov/
 # Node (website/)
 node_modules/
 .astro/
+website/.astro/
+website/.vscode/
+
+# Editor / tooling
+.claude/
+**/__pycache__/

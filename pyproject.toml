@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "d2"
 version = "0.8.0"
-description = "Async-first PostgreSQL ORM with a composable query builder and integrated migrations"
+description = "A type-safe query builder for Python with declarative schemas and integrated migrations"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]

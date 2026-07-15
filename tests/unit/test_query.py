@@ -224,15 +224,14 @@ class TestInsert:
         assert sql == 'INSERT INTO "public"."users" ("name","email") VALUES ($1,$2)'
         assert params == ("Alice", "a@x.com")
 
-    def test_insert_drops_pk_and_db_default_by_default(self):
+    def test_insert_keeps_explicit_pk_and_db_default_values(self):
         sql, params = Users.insert(id=99, name="Alice", email="a@x.com").build()
-        assert sql == 'INSERT INTO "public"."users" ("name","email") VALUES ($1,$2)'
-        assert params == ("Alice", "a@x.com")
-
-    def test_insert_exclude_defaults_false_keeps_pk(self):
-        sql, params = Users.insert(id=99, name="Alice", email="a@x.com", exclude_defaults=False).build()
         assert sql == 'INSERT INTO "public"."users" ("id","name","email") VALUES ($1,$2,$3)'
         assert params == (99, "Alice", "a@x.com")
+
+    def test_insert_exclude_defaults_removed_raises(self):
+        with pytest.raises(TypeError, match="exclude_defaults was removed"):
+            Users.insert(name="Alice", email="a@x.com", exclude_defaults=False)
 
     def test_insert_bulk(self):
         sql, params = Users.insert([
@@ -241,6 +240,14 @@ class TestInsert:
         ]).build()
         assert sql == 'INSERT INTO "public"."users" ("name","email") VALUES ($1,$2)'
         assert params == [("Alice", "a@x.com"), ("Bob", "b@x.com")]
+
+    def test_insert_bulk_keeps_explicit_pk_values(self):
+        sql, params = Users.insert([
+            {"id": 1, "name": "Alice", "email": "a@x.com"},
+            {"id": 2, "name": "Bob",   "email": "b@x.com"},
+        ]).build()
+        assert sql == 'INSERT INTO "public"."users" ("id","name","email") VALUES ($1,$2,$3)'
+        assert params == [(1, "Alice", "a@x.com"), (2, "Bob", "b@x.com")]
 
     def test_insert_bulk_empty_raises(self):
         with pytest.raises(ValueError, match="at least one row"):

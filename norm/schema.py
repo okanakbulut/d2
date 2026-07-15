@@ -948,26 +948,22 @@ class Writable(Entity):
     """Mixin that adds INSERT/UPDATE/DELETE capability. Inherit via Table, not directly."""
 
     @classmethod
-    def _default_columns(cls) -> frozenset[str]:
-        return frozenset(
-            f.column_name for f in cls.__fields__
-            if f.field_def.default is not None
-        )
-
-    @classmethod
-    def insert(cls, rows: "list[dict[str, Any]] | None" = None, *, exclude_defaults: bool = True, **kwargs: Any) -> InsertQuery:
+    def insert(cls, rows: "list[dict[str, Any]] | None" = None, **kwargs: Any) -> InsertQuery:
         from .query import InsertQuery
-        excluded = cls._default_columns() if exclude_defaults else frozenset[str]()
+        # Removed keyword args fall into **kwargs and would become bogus columns;
+        # reject the old parameter explicitly so stale callers fail loudly.
+        if "exclude_defaults" in kwargs:
+            raise TypeError(
+                "exclude_defaults was removed; insert() now sends exactly the columns you pass"
+            )
         if rows is not None:
             if not rows:
                 raise ValueError("insert requires at least one row")
-            filtered = [{k: v for k, v in row.items() if k not in excluded} for row in rows]
-            first_cols = set(filtered[0].keys())
-            if any(set(r.keys()) != first_cols for r in filtered[1:]):
+            first_cols = set(rows[0].keys())
+            if any(set(r.keys()) != first_cols for r in rows[1:]):
                 raise ValueError("all rows must have a consistent set of columns")
-            return InsertQuery(source=cls.__table__, rows=tuple(filtered), is_many=True)
-        row = {k: v for k, v in kwargs.items() if k not in excluded}
-        return InsertQuery(source=cls.__table__, rows=(row,), is_many=False)
+            return InsertQuery(source=cls.__table__, rows=tuple(dict(r) for r in rows), is_many=True)
+        return InsertQuery(source=cls.__table__, rows=(kwargs,), is_many=False)
 
     @classmethod
     def update(cls, **assignments: Any) -> UpdateQuery:

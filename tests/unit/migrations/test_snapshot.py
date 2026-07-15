@@ -1,8 +1,11 @@
 """Unit tests for snapshot: models → SchemaState."""
 
+import enum
 from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
+
+import pytest
 
 from norm import db
 from norm.migrations.snapshot import models_to_schema_state
@@ -72,6 +75,54 @@ class TestModelsToSchemaState:
         assert cols["j_dict"].type == "JSONB"
         assert cols["j_list"].type == "JSONB"
         assert cols["blob"].type == "BYTEA"
+
+    def test_str_enum_maps_to_text(self):
+        class Match(enum.StrEnum):
+            EXACT = "exact"
+            FUZZY = "fuzzy"
+
+        class Color(str, enum.Enum):
+            RED = "red"
+
+        class SnapMapping(Table):
+            match: Field[Match]
+            color: Field[Color]
+
+        cols = models_to_schema_state([SnapMapping]).tables["snap_mappings"].columns
+        assert cols["match"].type == "TEXT"
+        assert cols["color"].type == "TEXT"
+
+    def test_int_enum_maps_to_integer(self):
+        class Priority(enum.IntEnum):
+            LOW = 1
+            HIGH = 2
+
+        class SnapTicket(Table):
+            priority: Field[Priority]
+
+        col = models_to_schema_state([SnapTicket]).tables["snap_tickets"].columns["priority"]
+        assert col.type == "INTEGER"
+
+    def test_optional_str_enum_is_nullable_text(self):
+        class Match(enum.StrEnum):
+            EXACT = "exact"
+
+        class SnapOptionalEnum(Table):
+            match: Field[Match | None]
+
+        col = models_to_schema_state([SnapOptionalEnum]).tables["snap_optional_enums"].columns["match"]
+        assert col.type == "TEXT"
+        assert col.nullable is True
+
+    def test_plain_enum_raises_with_table_column_context(self):
+        class Shape(enum.Enum):
+            CIRCLE = object()
+
+        class SnapBadEnum(Table):
+            shape: Field[Shape]
+
+        with pytest.raises(TypeError, match=r"snap_bad_enums\.shape: no SQL mapping"):
+            models_to_schema_state([SnapBadEnum])
 
     def test_optional_field_is_nullable(self):
         class SnapMaybe(Table):

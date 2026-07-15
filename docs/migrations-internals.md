@@ -164,19 +164,25 @@ True
 
 This is the "target" side of the diff. It reads `__fields__`, `__meta__`, and `FieldDef` metadata to produce `ColumnState`, `UniqueConstraint`, `ForeignKeyConstraint`, and `IndexDef` entries.
 
-Python-to-SQL type mapping (partial):
+Python-to-SQL type mapping:
 
 | Python type | SQL type |
 |-------------|----------|
-| `int` (pk, db_default) | `SERIAL` |
-| `int` | `INTEGER` |
+| `int` (`default=db.serial()`) | `BIGSERIAL` |
+| `int` | `BIGINT` |
 | `str` | `TEXT` |
 | `float` | `DOUBLE PRECISION` |
 | `bool` | `BOOLEAN` |
 | `datetime` | `TIMESTAMPTZ` |
 | `date` | `DATE` |
+| `Decimal` | `NUMERIC` |
 | `uuid.UUID` | `UUID` |
 | `dict` / `list` | `JSONB` |
+| `bytes` | `BYTEA` |
+| str-based enum (`StrEnum`, `class X(str, Enum)`) | `TEXT` |
+| int-based enum (`IntEnum`) | `INTEGER` |
+
+Any other type raises `TypeError` with the offending `table.column` in the message.
 
 ---
 

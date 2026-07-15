@@ -5,6 +5,7 @@ target)` is stable when nothing changed.
 """
 
 
+import enum
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Protocol, cast, get_origin
@@ -90,6 +91,13 @@ def sql_type_for(python_type: Any) -> str:
     lookup = get_origin(python_type) or python_type
     if lookup in PY_TO_SQL:
         return PY_TO_SQL[lookup]
+    # Enum columns travel on the wire as their base value: str-based enums
+    # (StrEnum, `class X(str, Enum)`) as TEXT, int-based (IntEnum) as INTEGER.
+    if isinstance(lookup, type) and issubclass(lookup, enum.Enum):
+        if issubclass(lookup, str):
+            return "TEXT"
+        if issubclass(lookup, int):
+            return "INTEGER"
     raise TypeError(f"no SQL mapping for Python type {python_type!r}")
 
 
@@ -233,11 +241,14 @@ def models_to_schema_state(models: list[type]) -> SchemaState:
             continue
 
         norm_table = cast(_NormTable, cls)
-        columns: dict[str, ColumnState] = {}
-        for f in norm_table.__fields__:
-            columns[f.column_name] = column_spec_for_field(f)
         pika_table: pypika.Table = norm_table.__table__
         table_name: str = pika_table.get_table_name()
+        columns: dict[str, ColumnState] = {}
+        for f in norm_table.__fields__:
+            try:
+                columns[f.column_name] = column_spec_for_field(f)
+            except TypeError as exc:
+                raise TypeError(f"{table_name}.{f.column_name}: {exc}") from None
         schema_obj: Any = getattr(pika_table, "_schema", None)
         schema_str: str | None = (
             cast(str, schema_obj.get_sql(quote_char='"')) if schema_obj else None

@@ -34,6 +34,8 @@ Both use `NormMeta` as their metaclass, which on class creation:
 
 `Field[T | None]` (or `Field[Optional[T]]`) marks the column as nullable.
 
+Enum classes work as column types: str-based enums (`StrEnum`, `class X(str, Enum)`) are stored as `TEXT`, int-based enums (`IntEnum`) as `INTEGER`. Values travel on the wire as their base str/int value.
+
 ```python
 >>> class Article(Table):
 ...     id:         PrimaryKey[int]          # primary key

@@ -29,10 +29,10 @@ Pass column values as keyword arguments:
 
 ```
 
-Columns marked `db_default=True` or typed `PrimaryKey` are excluded automatically. Pass `exclude_defaults=False` to include them:
+`insert()` sends exactly the columns you pass. Omit server-defaulted columns (e.g. a `PrimaryKey` with `default=db.serial()`) to let the database fill them, or pass them explicitly to override:
 
 ```python
->>> User.insert(id=42, username="alice", email="alice@example.com", exclude_defaults=False).build()
+>>> User.insert(id=42, username="alice", email="alice@example.com").build()
 ('INSERT INTO "public"."users" ("id","username","email") VALUES ($1,$2,$3)', (42, 'alice', 'alice@example.com'))
 
 ```

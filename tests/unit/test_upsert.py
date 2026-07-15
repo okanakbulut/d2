@@ -15,6 +15,18 @@ class TestDoNothing:
         assert params == ("Alice", "a@x.com")
 
 
+class TestExplicitDefaultedValues:
+    def test_upsert_keeps_explicit_pk_value(self):
+        sql, params = (
+            Users.insert(id=99, name="Alice", email="a@x.com")
+            .on_conflict(Users.email)
+            .do_update(name=excluded(Users.name))
+            .build()
+        )
+        assert sql == 'INSERT INTO "public"."users" ("id","name","email") VALUES ($1,$2,$3) ON CONFLICT ("email") DO UPDATE SET "name"=EXCLUDED."name"'
+        assert params == (99, "Alice", "a@x.com")
+
+
 class TestDoUpdateExcluded:
     def test_do_update_with_excluded_reference(self):
         sql, params = (

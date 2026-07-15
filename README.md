@@ -14,11 +14,8 @@ Async-first PostgreSQL ORM for Python with a composable query builder and integr
 Requires Python 3.14+ and PostgreSQL.
 
 ```sh
-pip install git+https://github.com/okanakbulut/d2
+pip install d2
 ```
-
-> The `d2` name on PyPI is pending an ownership transfer of an abandoned
-> package; until that completes, install from GitHub as above.
 
 ## Quick example
 

@@ -14,7 +14,7 @@ export default defineConfig({
 	integrations: [
 		starlight({
 			title: 'd2',
-			description: 'Async-first PostgreSQL ORM for Python',
+			description: 'A Python ORM built around a type-safe query builder',
 			social: [
 				{ icon: 'github', label: 'GitHub', href: 'https://github.com/okanakbulut/d2' },
 			],

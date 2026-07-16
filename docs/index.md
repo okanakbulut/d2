@@ -1,14 +1,16 @@
 ---
 title: d2 Developer Guide
-description: "Async-first PostgreSQL ORM for Python — declarative schema, composable query builder, integrated migrations."
+description: "A Python ORM built around a type-safe query builder — declarative schemas, statically-typed queries, integrated migrations."
 ---
 
-d2 is a Python ORM for PostgreSQL. It provides:
+d2 is a Python ORM built around a powerful, type-safe query builder. You define your schema as classes and build queries that your type checker understands — column references, filters, and results are all statically typed. It provides:
 
+- **Type-safe query builder** — immutable, chainable SELECT/INSERT/UPDATE/DELETE builders where columns and results are typed end to end
 - **Declarative schema** — define tables and views as Python classes with type annotations
-- **Composable query builder** — immutable, chainable SELECT/INSERT/UPDATE/DELETE builders
 - **Integrated migrations** — schema diffing, codegen, apply/rollback, lint checks
-- **Async-first** — built on `asyncpg`; results deserialised via `msgspec`
+- **Async execution** — runs on `asyncpg` today; results deserialised via `msgspec`
+
+d2 currently targets PostgreSQL, but the query builder is dialect-agnostic by design, with support for more databases and drivers planned.
 
 ## Pages
 

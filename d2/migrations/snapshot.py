@@ -51,6 +51,7 @@ class _IndexDef(Protocol):
     name: str | None
     unique: bool
     method: str | None
+    where: str | None
 
 
 class _TableMeta(Protocol):
@@ -302,6 +303,7 @@ def models_to_schema_state(models: list[type]) -> SchemaState:
                         columns=cols,
                         unique=idx.unique,
                         method=idx.method,
+                        where=idx.where,
                     )
                 )
     return state

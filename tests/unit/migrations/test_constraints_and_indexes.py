@@ -159,6 +159,58 @@ class TestCreateIndex:
         op = CreateIndex(table="t", columns=("x",), name="idx_t_x")
         assert op.concurrent is True
 
+    def test_where_defaults_to_none(self):
+        op = CreateIndex(table="t", columns=("x",), name="idx_t_x")
+        assert op.where is None
+
+    def test_to_ddl_with_where_appends_predicate(self):
+        op = CreateIndex(
+            table="users",
+            columns=("email",),
+            name="uq_users_email_active",
+            unique=True,
+            concurrent=False,
+            schema="public",
+            where="deleted_at IS NULL",
+        )
+        assert (
+            op.to_ddl()
+            == 'CREATE UNIQUE INDEX IF NOT EXISTS "uq_users_email_active" '
+            'ON "public"."users" ("email") WHERE deleted_at IS NULL'
+        )
+
+    def test_to_source_includes_where(self):
+        op = CreateIndex(
+            table="t",
+            columns=("x",),
+            name="idx_t_x_active",
+            concurrent=False,
+            where="deleted_at IS NULL",
+        )
+        assert op.to_source("") == (
+            'CreateIndex(table="t", columns=("x",), name="idx_t_x_active", '
+            'method=None, unique=False, concurrent=False, schema=None, '
+            'where="deleted_at IS NULL"),'
+        )
+
+    def test_apply_records_where_on_state(self):
+        state = _state_with("t")
+        CreateIndex(
+            table="t",
+            columns=("x",),
+            name="idx_t_x_active",
+            where="deleted_at IS NULL",
+        ).apply(state)
+        assert state.tables["t"].indexes == [
+            IndexDef(
+                name="idx_t_x_active",
+                columns=("x",),
+                unique=False,
+                method=None,
+                where="deleted_at IS NULL",
+            ),
+        ]
+
     def test_apply_adds_index_to_state(self):
         state = _state_with("t")
         CreateIndex(
@@ -288,6 +340,37 @@ class TestSnapshotConstraintsAndIndexes:
             IndexDef(name="idx_snap_event_a_b", columns=("a", "b"), unique=False, method=None)
         ]
 
+    def test_table_meta_partial_index_carries_where_into_snapshot(self):
+        import d2.model as _model
+        from d2.migrations.snapshot import models_to_schema_state
+        from d2.schema import Field, Table
+
+        class SnapSoftDelete(Table):
+            __meta__ = _model.TableMeta(
+                indexes=(
+                    _model.IndexDef(
+                        columns=("email",),
+                        name="uq_snap_soft_delete_email_active",
+                        unique=True,
+                        where="deleted_at IS NULL",
+                    ),
+                ),
+            )
+            email: Field[str]
+            deleted_at: Field[str | None]
+
+        state = models_to_schema_state([SnapSoftDelete])
+        t = state.tables["snap_soft_deletes"]
+        assert t.indexes == [
+            IndexDef(
+                name="uq_snap_soft_delete_email_active",
+                columns=("email",),
+                unique=True,
+                method=None,
+                where="deleted_at IS NULL",
+            )
+        ]
+
 
 class TestDiffConstraintsAndIndexes:
     def test_new_unique_constraint_yields_add_and_reverse_drop(self):
@@ -400,6 +483,156 @@ class TestDiffConstraintsAndIndexes:
             )
         ]
 
+    def _states_with_index_pair(self, cur_idx: "IndexDef", tgt_idx: "IndexDef"):
+        current = SchemaState()
+        current.tables["t"] = TableState(
+            columns={"email": ColumnState(type="TEXT", nullable=False)},
+            schema="public",
+            indexes=[cur_idx],
+        )
+        target = SchemaState()
+        target.tables["t"] = TableState(
+            columns={"email": ColumnState(type="TEXT", nullable=False)},
+            schema="public",
+            indexes=[tgt_idx],
+        )
+        return current, target
+
+    def test_changed_index_where_yields_drop_and_recreate(self):
+        from d2.migrations.draft import diff_states
+
+        cur_idx = IndexDef(name="uq_t_email", columns=("email",), unique=True, method=None)
+        tgt_idx = IndexDef(
+            name="uq_t_email",
+            columns=("email",),
+            unique=True,
+            method=None,
+            where="deleted_at IS NULL",
+        )
+        current, target = self._states_with_index_pair(cur_idx, tgt_idx)
+
+        forward, reverse = diff_states(current, target)
+        assert forward == [
+            DropIndex(name="uq_t_email", concurrent=True, schema="public", table="t"),
+            CreateIndex(
+                table="t",
+                columns=("email",),
+                name="uq_t_email",
+                method=None,
+                unique=True,
+                concurrent=True,
+                schema="public",
+                where="deleted_at IS NULL",
+            ),
+        ]
+        assert reverse == [
+            DropIndex(name="uq_t_email", concurrent=True, schema="public", table="t"),
+            CreateIndex(
+                table="t",
+                columns=("email",),
+                name="uq_t_email",
+                method=None,
+                unique=True,
+                concurrent=True,
+                schema="public",
+                where=None,
+            ),
+        ]
+
+    def test_changed_index_columns_yields_drop_and_recreate(self):
+        from d2.migrations.draft import diff_states
+
+        cur_idx = IndexDef(name="idx_t", columns=("email",), unique=False, method=None)
+        tgt_idx = IndexDef(name="idx_t", columns=("email", "id"), unique=False, method=None)
+        current, target = self._states_with_index_pair(cur_idx, tgt_idx)
+
+        forward, reverse = diff_states(current, target)
+        assert forward == [
+            DropIndex(name="idx_t", concurrent=True, schema="public", table="t"),
+            CreateIndex(
+                table="t",
+                columns=("email", "id"),
+                name="idx_t",
+                method=None,
+                unique=False,
+                concurrent=True,
+                schema="public",
+            ),
+        ]
+        assert reverse == [
+            DropIndex(name="idx_t", concurrent=True, schema="public", table="t"),
+            CreateIndex(
+                table="t",
+                columns=("email",),
+                name="idx_t",
+                method=None,
+                unique=False,
+                concurrent=True,
+                schema="public",
+            ),
+        ]
+
+    def test_unchanged_index_yields_no_ops(self):
+        from d2.migrations.draft import diff_states
+
+        idx = IndexDef(
+            name="uq_t_email",
+            columns=("email",),
+            unique=True,
+            method=None,
+            where="deleted_at IS NULL",
+        )
+        current, target = self._states_with_index_pair(idx, idx)
+
+        forward, reverse = diff_states(current, target)
+        assert forward == []
+        assert reverse == []
+
+
+class TestPartialIndexRoundTrip:
+    def test_make_emits_where_and_replay_round_trips(self, tmp_path: Path) -> None:
+        import d2.model as _model
+        from d2.migrations.codegen import make_migration
+        from d2.migrations.draft import diff_states
+        from d2.migrations.replay import replay_migrations
+        from d2.migrations.snapshot import models_to_schema_state
+        from d2.schema import Field, Table
+
+        class RtSoftDelete(Table):
+            __meta__ = _model.TableMeta(
+                indexes=(
+                    _model.IndexDef(
+                        columns=("email",),
+                        name="uq_rt_soft_delete_email_active",
+                        unique=True,
+                        where="deleted_at IS NULL",
+                    ),
+                ),
+            )
+            email: Field[str]
+            deleted_at: Field[str | None]
+
+        target = models_to_schema_state([RtSoftDelete])
+        forward, reverse = diff_states(SchemaState(), target)
+        path = make_migration(
+            migrations_dir=tmp_path,
+            number=1,
+            forward=forward,
+            reverse=reverse,
+            dependencies=[],
+            label=None,
+        )
+        body = path.read_text()
+        assert (
+            'CreateIndex(table="rt_soft_deletes", columns=("email",), '
+            'name="uq_rt_soft_delete_email_active", method=None, unique=True, '
+            'concurrent=True, schema="public", where="deleted_at IS NULL"),'
+        ) in body
+
+        replayed = replay_migrations([path])
+        fwd_again, _ = diff_states(replayed, target)
+        assert fwd_again == []
+
 
 EXPECTED_CODEGEN_ATOMIC_FALSE = '''from d2.migrations import Migration
 from d2.migrations.operations import AddColumn, AddConstraint, AlterColumnType, ColumnDef, CreateExtension, CreateIndex, CreateSchema, CreateTable, CreateView, DropColumn, DropColumnDefault, DropColumnNotNull, DropConstraint, DropExtension, DropIndex, DropSchema, DropTable, DropView, RenameColumn, SetColumnDefault, SetColumnNotNull
@@ -412,7 +645,7 @@ class Migration(Migration):
     atomic = False
     operations = [
         AddConstraint(table="users", constraint={"type": "unique", "name": "users_email_key", "columns": ("email",)}, schema="public"),
-        CreateIndex(table="users", columns=("name",), name="idx_users_name", method=None, unique=False, concurrent=True, schema="public"),
+        CreateIndex(table="users", columns=("name",), name="idx_users_name", method=None, unique=False, concurrent=True, schema="public", where=None),
         DropConstraint(table="users", name="old_key", schema="public"),
         DropIndex(name="old_idx", concurrent=True, schema="public", table="users"),
     ]
@@ -420,7 +653,7 @@ class Migration(Migration):
         DropConstraint(table="users", name="users_email_key", schema="public"),
         DropIndex(name="idx_users_name", concurrent=True, schema="public", table="users"),
         AddConstraint(table="users", constraint={"type": "unique", "name": "old_key", "columns": ("legacy",)}, schema="public"),
-        CreateIndex(table="users", columns=("legacy",), name="old_idx", method=None, unique=False, concurrent=True, schema="public"),
+        CreateIndex(table="users", columns=("legacy",), name="old_idx", method=None, unique=False, concurrent=True, schema="public", where=None),
     ]
 '''
 

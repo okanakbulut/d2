@@ -545,6 +545,7 @@ class CreateIndex(_OpBase):
     unique: bool = False
     concurrent: bool = True
     schema: str | None = None
+    where: str | None = None
 
     def to_ddl(self) -> str:
         parts = ["CREATE"]
@@ -560,6 +561,8 @@ class CreateIndex(_OpBase):
         if self.method:
             parts.append(f"USING {self.method}")
         parts.append(f"({quote_cols(self.columns)})")
+        if self.where:
+            parts.append(f"WHERE {self.where}")
         return " ".join(parts)
 
     def to_source(self, indent: str) -> str:
@@ -568,7 +571,7 @@ class CreateIndex(_OpBase):
             f"columns={_format_columns_tuple(tuple(self.columns))}, "
             f"name={_q(self.name)}, method={_q(self.method)}, "
             f"unique={_q(self.unique)}, concurrent={_q(self.concurrent)}, "
-            f"schema={_q(self.schema)}),"
+            f"schema={_q(self.schema)}, where={_q(self.where)}),"
         )
 
     def apply(self, state: SchemaState) -> None:
@@ -579,6 +582,7 @@ class CreateIndex(_OpBase):
                 columns=tuple(self.columns),
                 unique=self.unique,
                 method=self.method,
+                where=self.where,
             )
         )
 

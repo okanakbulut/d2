@@ -227,6 +227,21 @@ Set `atomic = False` when operations cannot run inside a transaction — for exa
 
 ```
 
+`where` makes the index partial:
+
+```python
+>>> CreateIndex(
+...     table="users",
+...     columns=("email",),
+...     name="uq_users_email_active",
+...     unique=True,
+...     concurrent=False,
+...     where="deleted_at IS NULL",
+... ).to_ddl()
+'CREATE UNIQUE INDEX IF NOT EXISTS "uq_users_email_active" ON "users" ("email") WHERE deleted_at IS NULL'
+
+```
+
 When `concurrent=True`, the migration **must** set `atomic = False`.
 
 ### Schema and extension operations

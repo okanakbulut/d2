@@ -21,7 +21,15 @@ class CIWidget(Table):
     __meta__ = TableMeta(
         table="d2_ci_widgets",
         schema="public",
-        indexes=(IndexDef(columns=("score",), name="idx_d2_ci_widgets_score"),),
+        indexes=(
+            IndexDef(columns=("score",), name="idx_d2_ci_widgets_score"),
+            IndexDef(
+                columns=("email",),
+                name="uq_d2_ci_widgets_email_active",
+                unique=True,
+                where="score > 0",
+            ),
+        ),
     )
     id: PrimaryKey[int] = field(default=db.serial())
     email: Field[str] = field(unique=True)
@@ -77,7 +85,12 @@ async def test_unique_and_index_make_and_apply(pg_conn: Any, tmp_path: Path) -> 
     assert (
         'CreateIndex(table="d2_ci_widgets", columns=("score",), '
         'name="idx_d2_ci_widgets_score", method=None, unique=False, '
-        'concurrent=True, schema="public"),'
+        'concurrent=True, schema="public", where=None),'
+    ) in body
+    assert (
+        'CreateIndex(table="d2_ci_widgets", columns=("email",), '
+        'name="uq_d2_ci_widgets_email_active", method=None, unique=True, '
+        'concurrent=True, schema="public", where="score > 0"),'
     ) in body
 
     proc = _run_cli(tmp_path, "apply", "--dsn", PG_DSN)
@@ -98,6 +111,16 @@ async def test_unique_and_index_make_and_apply(pg_conn: Any, tmp_path: Path) -> 
         "idx_d2_ci_widgets_score",
     )
     assert index_row is not None
+
+    partial_row = await pg_conn.fetchrow(
+        "SELECT indexdef FROM pg_indexes "
+        "WHERE schemaname = $1 AND tablename = $2 AND indexname = $3",
+        "public",
+        "d2_ci_widgets",
+        "uq_d2_ci_widgets_email_active",
+    )
+    assert partial_row is not None
+    assert "WHERE" in partial_row["indexdef"]
 
     proc = _run_cli(tmp_path, "check")
     assert proc.returncode == 0, (proc.stdout, proc.stderr)

@@ -146,7 +146,21 @@ Referential actions are constants on the `db` module: `db.CASCADE`, `db.SET_NULL
 ...     unique=False,
 ...     method="GIN",
 ... )
-IndexDef(columns=('col_a', 'col_b'), name='idx_my_table_ab', unique=False, method='GIN')
+IndexDef(columns=('col_a', 'col_b'), name='idx_my_table_ab', unique=False, method='GIN', where=None)
+
+```
+
+`where` declares a partial index — the predicate is emitted verbatim as
+`CREATE [UNIQUE] INDEX ... WHERE <predicate>`:
+
+```python
+>>> IndexDef(
+...     columns=("email",),
+...     name="uq_users_email_active",
+...     unique=True,
+...     where="deleted_at IS NULL",
+... )
+IndexDef(columns=('email',), name='uq_users_email_active', unique=True, method=None, where='deleted_at IS NULL')
 
 ```
 

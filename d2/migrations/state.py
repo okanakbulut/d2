@@ -40,6 +40,7 @@ class IndexDef:
     columns: tuple[str, ...]
     unique: bool = False
     method: str | None = None
+    where: str | None = None  # partial-index predicate (SQL, no leading WHERE)
 
 
 Constraint = UniqueConstraint | ForeignKeyConstraint

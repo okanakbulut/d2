@@ -46,6 +46,7 @@ class IndexDef:
     name: str | None = None
     unique: bool = False
     method: str | None = None
+    where: str | None = None  # partial-index predicate (SQL, no leading WHERE)
 
 
 @dataclass(frozen=True)

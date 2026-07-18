@@ -315,6 +315,7 @@ def create_index_from_state(table: str, schema: str | None, idx: IndexDef) -> Cr
         unique=idx.unique,
         concurrent=True,
         schema=schema,
+        where=idx.where,
     )
 
 
@@ -340,4 +341,18 @@ def diff_indexes(
                 DropIndex(name=name, concurrent=True, schema=schema, table=table)
             )
             reverse.append(create_index_from_state(table, schema, i))
+    # Same-named index with changed properties (columns, unique, method,
+    # where) — indexes cannot be altered in place, so drop + recreate.
+    for name, tgt_i in tgt_by_name.items():
+        cur_i = cur_by_name.get(name)
+        if cur_i is None or cur_i == tgt_i:
+            continue
+        forward.append(
+            DropIndex(name=name, concurrent=True, schema=schema, table=table)
+        )
+        forward.append(create_index_from_state(table, schema, tgt_i))
+        reverse.append(
+            DropIndex(name=name, concurrent=True, schema=schema, table=table)
+        )
+        reverse.append(create_index_from_state(table, schema, cur_i))
     return forward, reverse

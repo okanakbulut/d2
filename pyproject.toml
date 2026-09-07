@@ -24,6 +24,7 @@ Issues = "https://github.com/okanakbulut/d2/issues"
 
 [dependency-groups]
 dev = [
+    "commitizen==4.13.10",
     "pre-commit>=4.6.0",
     "pyright>=1.1.409",
     "pytest>=9.0.3",
@@ -46,5 +47,30 @@ addopts = [
     "--quiet",
     "--tb=long",
 ]
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+tag_format = "v$version"
+version_scheme = "semver"
+version_provider = "pep621"
+update_changelog_on_bump = true
+major_version_zero = true
+
+[tool.coverage.run]
+branch = true
+source = ["d2"]
+omit = ["tests/*", "*/tests/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "def __str__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
+show_missing = true
+
 [tool.hatch.build.targets.wheel]
 packages = ["d2"]

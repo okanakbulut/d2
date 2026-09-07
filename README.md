@@ -1,5 +1,7 @@
 # d2
 
+[![Coverage](https://raw.githubusercontent.com/okanakbulut/d2/main/coverage.svg)](https://github.com/okanakbulut/d2/actions/workflows/release.yml)
+
 A Python ORM built around a powerful, type-safe query builder. Define your schema as classes and build SELECT/INSERT/UPDATE/DELETE queries that your type checker understands — column references, filters, and results are all statically typed.
 
 - **Type-safe query builder** — immutable, chainable builders where columns and results are typed end to end

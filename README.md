@@ -38,8 +38,8 @@ q = (
 )
 
 q.build()
-# ('SELECT "users"."id","users"."name" FROM "public"."users"
-#   WHERE "users"."email" ILIKE $1 ORDER BY "users"."id" ASC LIMIT 10',
+# ('SELECT "user"."id","user"."name" FROM "public"."user"
+#   WHERE "user"."email" ILIKE $1 ORDER BY "user"."id" ASC LIMIT 10',
 #  ('%@example.com',))
 ```
 

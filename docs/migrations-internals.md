@@ -158,9 +158,9 @@ Introspects `Table` / `View` class definitions and produces a `SchemaState`:
 ...     email: Unique[str]
 ...
 >>> state = models_to_schema_state([UserM])
->>> "user_ms" in state.tables
+>>> "user_m" in state.tables
 True
->>> state.tables["user_ms"].columns["id"].has_sequence_default
+>>> state.tables["user_m"].columns["id"].has_sequence_default
 True
 
 ```

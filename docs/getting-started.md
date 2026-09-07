@@ -58,7 +58,7 @@ Key points:
 ...     .build()
 ... )
 >>> sql
-'SELECT "users"."id","users"."username" FROM "public"."users" WHERE "users"."id">$1'
+'SELECT "user"."id","user"."username" FROM "public"."user" WHERE "user"."id">$1'
 >>> params
 (0,)
 

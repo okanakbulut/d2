@@ -443,12 +443,7 @@ _FIELD_FLAGS: dict[type, dict[str, bool]] = {
 
 def _infer_table_name(class_name: str) -> str:
     name = re.sub(r"Model$", "", class_name)
-    name = re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
-    if name.endswith(("ch", "sh")) or name.endswith(("s", "x", "z")):
-        return name + "es"
-    if name.endswith("y") and len(name) > 1 and name[-2] not in "aeiou":
-        return name[:-1] + "ies"
-    return name + "s"
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
 
 
 def _infer_schema(module: str) -> str | None:

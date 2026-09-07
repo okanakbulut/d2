@@ -33,12 +33,12 @@ class FkAuthor(Table):
 class TestSnapshotForeignKeys:
     def test_inline_fk_with_model_target_produces_constraint(self):
         state = models_to_schema_state([FkOrg, FkUser])
-        assert state.tables["fk_users"].constraints == [
+        assert state.tables["fk_user"].constraints == [
             ForeignKeyConstraint(
-                name="fk_users_org_id_fkey",
+                name="fk_user_org_id_fkey",
                 columns=("org_id",),
                 references_schema="public",
-                references_table="fk_orgs",
+                references_table="fk_org",
                 references_column="id",
                 on_delete="CASCADE",
                 on_update=None,
@@ -47,12 +47,12 @@ class TestSnapshotForeignKeys:
 
     def test_fk_with_on_delete_and_on_update(self):
         state = models_to_schema_state([FkOrg, FkUser, FkPost])
-        assert state.tables["fk_posts"].constraints == [
+        assert state.tables["fk_post"].constraints == [
             ForeignKeyConstraint(
-                name="fk_posts_author_id_fkey",
+                name="fk_post_author_id_fkey",
                 columns=("author_id",),
                 references_schema="public",
-                references_table="fk_users",
+                references_table="fk_user",
                 references_column="id",
                 on_delete="SET NULL",
                 on_update="CASCADE",
@@ -61,12 +61,12 @@ class TestSnapshotForeignKeys:
 
     def test_fk_without_on_delete_produces_constraint_with_no_action(self):
         state = models_to_schema_state([FkOrg, FkAuthor])
-        assert state.tables["fk_authors"].constraints == [
+        assert state.tables["fk_author"].constraints == [
             ForeignKeyConstraint(
-                name="fk_authors_org_id_fkey",
+                name="fk_author_org_id_fkey",
                 columns=("org_id",),
                 references_schema="public",
-                references_table="fk_orgs",
+                references_table="fk_org",
                 references_column="id",
                 on_delete=None,
                 on_update=None,

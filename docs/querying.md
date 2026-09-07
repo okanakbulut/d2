@@ -34,7 +34,7 @@ Call `.build()` to emit SQL and a tuple of parameters:
 ...     id: PrimaryKey[int] = field(default=db.serial())
 ...
 >>> User.select(User.id).build()
-('SELECT "users"."id" FROM "public"."users"', ())
+('SELECT "user"."id" FROM "public"."user"', ())
 
 ```
 
@@ -46,10 +46,10 @@ Call `.build()` to emit SQL and a tuple of parameters:
 
 ```python
 >>> User.select(User.id, User.name).build()
-('SELECT "users"."id","users"."name" FROM "public"."users"', ())
+('SELECT "user"."id","user"."name" FROM "public"."user"', ())
 
 >>> User.select_all().build()
-('SELECT "users"."id","users"."name","users"."email","users"."bio" FROM "public"."users"', ())
+('SELECT "user"."id","user"."name","user"."email","user"."bio" FROM "public"."user"', ())
 
 ```
 
@@ -65,7 +65,7 @@ Multiple `.where()` calls are combined with AND:
 >>> q = User.select(User.id).where(User.email == "alice@example.com")
 >>> q = q.where(User.id > 10)
 >>> q.build()
-('SELECT "users"."id" FROM "public"."users" WHERE "users"."email"=$1 AND "users"."id">$2', ('alice@example.com', 10))
+('SELECT "user"."id" FROM "public"."user" WHERE "user"."email"=$1 AND "user"."id">$2', ('alice@example.com', 10))
 
 ```
 
@@ -74,11 +74,11 @@ Combine filters with `&` (AND) and `|` (OR):
 ```python
 >>> f = (User.id > 10) & (User.email.ilike("%@example.com"))
 >>> User.select(User.id).where(f).build()
-('SELECT "users"."id" FROM "public"."users" WHERE "users"."id">$1 AND "users"."email" ILIKE $2', (10, '%@example.com'))
+('SELECT "user"."id" FROM "public"."user" WHERE "user"."id">$1 AND "user"."email" ILIKE $2', (10, '%@example.com'))
 
 >>> f2 = (User.id == 1) | (User.id == 2)
 >>> User.select(User.id).where(f2).build()
-('SELECT "users"."id" FROM "public"."users" WHERE "users"."id"=$1 OR "users"."id"=$2', (1, 2))
+('SELECT "user"."id" FROM "public"."user" WHERE "user"."id"=$1 OR "user"."id"=$2', (1, 2))
 
 ```
 
@@ -103,19 +103,19 @@ Combine filters with `&` (AND) and `|` (OR):
 
 ```python
 >>> User.select(User.id).where(User.email.isnull()).build()
-('SELECT "users"."id" FROM "public"."users" WHERE "users"."email" IS NULL', ())
+('SELECT "user"."id" FROM "public"."user" WHERE "user"."email" IS NULL', ())
 
 >>> User.select(User.id).where(User.id.between(10, 20)).build()
-('SELECT "users"."id" FROM "public"."users" WHERE "users"."id" BETWEEN $1 AND $2', (10, 20))
+('SELECT "user"."id" FROM "public"."user" WHERE "user"."id" BETWEEN $1 AND $2', (10, 20))
 
 >>> User.select(User.id).where(User.id.isin([1, 2, 3])).build()
-('SELECT "users"."id" FROM "public"."users" WHERE "users"."id" IN ($1,$2,$3)', (1, 2, 3))
+('SELECT "user"."id" FROM "public"."user" WHERE "user"."id" IN ($1,$2,$3)', (1, 2, 3))
 
 >>> User.select(User.id).where(User.name.like("Al%")).build()
-('SELECT "users"."id" FROM "public"."users" WHERE "users"."name" LIKE $1', ('Al%',))
+('SELECT "user"."id" FROM "public"."user" WHERE "user"."name" LIKE $1', ('Al%',))
 
 >>> User.select(User.id).where(User.name == User.email).build()
-('SELECT "users"."id" FROM "public"."users" WHERE "users"."email"="users"."name"', ())
+('SELECT "user"."id" FROM "public"."user" WHERE "user"."email"="user"."name"', ())
 
 ```
 
@@ -125,16 +125,16 @@ Combine filters with `&` (AND) and `|` (OR):
 
 ```python
 >>> User.select(User.id).order_by(User.name).build()
-('SELECT "users"."id" FROM "public"."users" ORDER BY "users"."name" ASC', ())
+('SELECT "user"."id" FROM "public"."user" ORDER BY "user"."name" ASC', ())
 
 >>> User.select(User.id).order_by(User.name, desc=True).build()
-('SELECT "users"."id" FROM "public"."users" ORDER BY "users"."name" DESC', ())
+('SELECT "user"."id" FROM "public"."user" ORDER BY "user"."name" DESC', ())
 
 >>> User.select(User.id).order_by(User.name.desc()).build()
-('SELECT "users"."id" FROM "public"."users" ORDER BY "users"."name" DESC', ())
+('SELECT "user"."id" FROM "public"."user" ORDER BY "user"."name" DESC', ())
 
 >>> User.select(User.id).order_by(User.name.asc(), User.id.desc()).build()
-('SELECT "users"."id" FROM "public"."users" ORDER BY "users"."name" ASC,"users"."id" DESC', ())
+('SELECT "user"."id" FROM "public"."user" ORDER BY "user"."name" ASC,"user"."id" DESC', ())
 
 ```
 
@@ -144,10 +144,10 @@ Combine filters with `&` (AND) and `|` (OR):
 
 ```python
 >>> User.select(User.id).limit(10).build()
-('SELECT "users"."id" FROM "public"."users" LIMIT 10', ())
+('SELECT "user"."id" FROM "public"."user" LIMIT 10', ())
 
 >>> User.select(User.id).limit(10).offset(20).build()
-('SELECT "users"."id" FROM "public"."users" LIMIT 10 OFFSET 20', ())
+('SELECT "user"."id" FROM "public"."user" LIMIT 10 OFFSET 20', ())
 
 ```
 
@@ -157,7 +157,7 @@ Combine filters with `&` (AND) and `|` (OR):
 
 ```python
 >>> User.select(User.email).distinct().build()
-('SELECT DISTINCT "users"."email" FROM "public"."users"', ())
+('SELECT DISTINCT "user"."email" FROM "public"."user"', ())
 
 ```
 
@@ -174,16 +174,16 @@ All join methods accept `on=` as a filter (or compound filter):
 ...     .join(User, on=Post.user_id == User.id)
 ... )
 >>> q.build()
-('SELECT "posts"."id","posts"."title","users"."name" FROM "public"."posts" JOIN "public"."users" ON "users"."id"="posts"."user_id"', ())
+('SELECT "post"."id","post"."title","user"."name" FROM "public"."post" JOIN "public"."user" ON "user"."id"="post"."user_id"', ())
 
 >>> Post.select(Post.id).left_join(User, on=Post.user_id == User.id).build()
-('SELECT "posts"."id" FROM "public"."posts" LEFT JOIN "public"."users" ON "users"."id"="posts"."user_id"', ())
+('SELECT "post"."id" FROM "public"."post" LEFT JOIN "public"."user" ON "user"."id"="post"."user_id"', ())
 
 >>> Post.select(Post.id).right_join(User, on=Post.user_id == User.id).build()
-('SELECT "posts"."id" FROM "public"."posts" RIGHT JOIN "public"."users" ON "users"."id"="posts"."user_id"', ())
+('SELECT "post"."id" FROM "public"."post" RIGHT JOIN "public"."user" ON "user"."id"="post"."user_id"', ())
 
 >>> Post.select(Post.id).cross_join(User).build()
-('SELECT "posts"."id" FROM "public"."posts" CROSS JOIN "public"."users"', ())
+('SELECT "post"."id" FROM "public"."post" CROSS JOIN "public"."user"', ())
 
 ```
 
@@ -201,7 +201,7 @@ Use `.aliased()` on a plain entity to create a real table alias:
 ...     .join(Editor, on=Post.user_id == Editor.id)
 ... )
 >>> q.build()
-('SELECT "posts"."title","author"."name","editor"."name" FROM "public"."posts" JOIN "public"."users" "author" ON "author"."id"="posts"."user_id" JOIN "public"."users" "editor" ON "editor"."id"="posts"."user_id"', ())
+('SELECT "post"."title","author"."name","editor"."name" FROM "public"."post" JOIN "public"."user" "author" ON "author"."id"="post"."user_id" JOIN "public"."user" "editor" ON "editor"."id"="post"."user_id"', ())
 
 ```
 
@@ -218,7 +218,7 @@ Build the subquery, call `.aliased()` to wrap it as a named subquery, then join:
 ... )
 >>> q = User.select(User.name, recent.id).join(recent, on=User.id == recent.user_id)
 >>> q.build()
-('SELECT "users"."name","recent"."id" FROM "public"."users" JOIN (SELECT "posts"."id","posts"."user_id" FROM "public"."posts" WHERE "posts"."id">$1) "recent" ON "users"."id"="recent"."user_id"', (100,))
+('SELECT "user"."name","recent"."id" FROM "public"."user" JOIN (SELECT "post"."id","post"."user_id" FROM "public"."post" WHERE "post"."id">$1) "recent" ON "user"."id"="recent"."user_id"', (100,))
 
 ```
 
@@ -234,7 +234,7 @@ Build the subquery, call `.aliased()` to wrap it as a named subquery, then join:
 ...     .having(Post.id.count() > 5)
 ... )
 >>> q.build()
-('SELECT "posts"."user_id",COUNT("posts"."id") "cnt" FROM "public"."posts" GROUP BY "posts"."user_id" HAVING COUNT("posts"."id")>$1', (5,))
+('SELECT "post"."user_id",COUNT("post"."id") "cnt" FROM "public"."post" GROUP BY "post"."user_id" HAVING COUNT("post"."id")>$1', (5,))
 
 ```
 
@@ -258,7 +258,7 @@ Always `.aliased("name")` an aggregate so the result has a predictable column na
 
 ```python
 >>> Post.select(Post.user_id, Post.id.count().aliased("total")).build()
-('SELECT "posts"."user_id",COUNT("posts"."id") "total" FROM "public"."posts"', ())
+('SELECT "post"."user_id",COUNT("post"."id") "total" FROM "public"."post"', ())
 
 ```
 
@@ -270,10 +270,10 @@ Always `.aliased("name")` an aggregate so the result has a predictable column na
 
 ```python
 >>> A.select(A.id).union(B.select(B.id)).build()
-('(SELECT "as"."id" FROM "public"."as") UNION (SELECT "bs"."id" FROM "public"."bs")', ())
+('(SELECT "a"."id" FROM "public"."a") UNION (SELECT "b"."id" FROM "public"."b")', ())
 
 >>> A.select(A.id).union(B.select(B.id), all=True).build()
-('(SELECT "as"."id" FROM "public"."as") UNION ALL (SELECT "bs"."id" FROM "public"."bs")', ())
+('(SELECT "a"."id" FROM "public"."a") UNION ALL (SELECT "b"."id" FROM "public"."b")', ())
 
 ```
 
@@ -281,7 +281,7 @@ Always `.aliased("name")` an aggregate so the result has a predictable column na
 
 ```python
 >>> A.select(A.id).intersect(B.select(B.id)).build()
-('(SELECT "as"."id" FROM "public"."as") INTERSECT (SELECT "bs"."id" FROM "public"."bs")', ())
+('(SELECT "a"."id" FROM "public"."a") INTERSECT (SELECT "b"."id" FROM "public"."b")', ())
 
 ```
 
@@ -289,7 +289,7 @@ Always `.aliased("name")` an aggregate so the result has a predictable column na
 
 ```python
 >>> A.select(A.id).exclude(B.select(B.id)).build()
-('(SELECT "as"."id" FROM "public"."as") EXCEPT (SELECT "bs"."id" FROM "public"."bs")', ())
+('(SELECT "a"."id" FROM "public"."a") EXCEPT (SELECT "b"."id" FROM "public"."b")', ())
 
 ```
 
@@ -297,7 +297,7 @@ Set operations support `.order_by()`, `.limit()`, and `.offset()` applied after 
 
 ```python
 >>> A.select(A.id).union(B.select(B.id)).order_by(A.id).limit(5).build()
-('(SELECT "as"."id" FROM "public"."as") UNION (SELECT "bs"."id" FROM "public"."bs") ORDER BY "id" ASC LIMIT 5', ())
+('(SELECT "a"."id" FROM "public"."a") UNION (SELECT "b"."id" FROM "public"."b") ORDER BY "id" ASC LIMIT 5', ())
 
 ```
 
@@ -309,7 +309,7 @@ Set operations support `.order_by()`, `.limit()`, and `.offset()` applied after 
 
 ```python
 >>> User.select(User.email.aliased("contact")).build()
-('SELECT "users"."email" "contact" FROM "public"."users"', ())
+('SELECT "user"."email" "contact" FROM "public"."user"', ())
 
 ```
 
@@ -319,7 +319,7 @@ Set operations support `.order_by()`, `.limit()`, and `.offset()` applied after 
 
 ```python
 >>> User.select(User.id.cast("TEXT").aliased("id_text")).build()
-('SELECT CAST("users"."id" AS TEXT) "id_text" FROM "public"."users"', ())
+('SELECT CAST("user"."id" AS TEXT) "id_text" FROM "public"."user"', ())
 
 ```
 
@@ -329,10 +329,10 @@ Set operations support `.order_by()`, `.limit()`, and `.offset()` applied after 
 
 ```python
 >>> Product.select((Product.price + Product.tax).aliased("total")).build()
-('SELECT "products"."price"+"products"."tax" "total" FROM "public"."products"', ())
+('SELECT "product"."price"+"product"."tax" "total" FROM "public"."product"', ())
 
 >>> Product.select((Product.price * 2).aliased("doubled")).build()
-('SELECT "products"."price"*$1 "doubled" FROM "public"."products"', (2,))
+('SELECT "product"."price"*$1 "doubled" FROM "public"."product"', (2,))
 
 ```
 

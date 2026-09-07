@@ -299,9 +299,9 @@ class TestSnapshotConstraintsAndIndexes:
             email: Field[str] = field(unique=True)
 
         state = models_to_schema_state([SnapUniqueUser])
-        t = state.tables["snap_unique_users"]
+        t = state.tables["snap_unique_user"]
         assert t.constraints == [
-            UniqueConstraint(name="snap_unique_users_email_key", columns=("email",))
+            UniqueConstraint(name="snap_unique_user_email_key", columns=("email",))
         ]
         assert t.indexes == []
 
@@ -314,10 +314,10 @@ class TestSnapshotConstraintsAndIndexes:
             email: Field[str] = field(index=True)
 
         state = models_to_schema_state([SnapIndexedUser])
-        t = state.tables["snap_indexed_users"]
+        t = state.tables["snap_indexed_user"]
         assert t.constraints == []
         assert t.indexes == [
-            IndexDef(name="idx_snap_indexed_users_email", columns=("email",), unique=False, method=None)
+            IndexDef(name="idx_snap_indexed_user_email", columns=("email",), unique=False, method=None)
         ]
 
     def test_table_meta_indexes_added_to_snapshot(self):
@@ -335,7 +335,7 @@ class TestSnapshotConstraintsAndIndexes:
             b: Field[str]
 
         state = models_to_schema_state([SnapEvent])
-        t = state.tables["snap_events"]
+        t = state.tables["snap_event"]
         assert t.indexes == [
             IndexDef(name="idx_snap_event_a_b", columns=("a", "b"), unique=False, method=None)
         ]
@@ -360,7 +360,7 @@ class TestSnapshotConstraintsAndIndexes:
             deleted_at: Field[str | None]
 
         state = models_to_schema_state([SnapSoftDelete])
-        t = state.tables["snap_soft_deletes"]
+        t = state.tables["snap_soft_delete"]
         assert t.indexes == [
             IndexDef(
                 name="uq_snap_soft_delete_email_active",
@@ -624,7 +624,7 @@ class TestPartialIndexRoundTrip:
         )
         body = path.read_text()
         assert (
-            'CreateIndex(table="rt_soft_deletes", columns=("email",), '
+            'CreateIndex(table="rt_soft_delete", columns=("email",), '
             'name="uq_rt_soft_delete_email_active", method=None, unique=True, '
             'concurrent=True, schema="public", where="deleted_at IS NULL"),'
         ) in body

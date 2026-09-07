@@ -5,8 +5,8 @@ from typing import Any
 from .db import DbExpr, ReferentialAction
 
 # Sentinel: "infer schema from module path" — the default when schema is not explicit.
-# schema=None means "no schema prefix" (public); schema=_INFER means "derive from module".
-_INFER: Any = object()
+# schema=None means "no schema prefix" (public); schema=INFER means "derive from module".
+INFER: Any = object()
 
 
 @dataclass(frozen=True)
@@ -52,6 +52,6 @@ class IndexDef:
 @dataclass(frozen=True)
 class TableMeta:
     table: str | None = None
-    schema: str | None = _INFER  # type: ignore[assignment]  — None = no prefix; default = infer from module
+    schema: str | None = INFER  # type: ignore[assignment]  — None = no prefix; default = infer from module
     indexes: tuple[IndexDef, ...] = ()
     extensions: tuple[str, ...] = ()

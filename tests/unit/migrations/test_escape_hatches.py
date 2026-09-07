@@ -35,8 +35,8 @@ class _StubRaw:
     def transaction(self) -> "_StubRaw":
         return self
 
-    async def __aenter__(self) -> "_StubRaw":
-        return self
+    async def __aenter__(self) -> None:
+        return None
 
     async def __aexit__(self, *exc: object) -> None:
         return None
@@ -46,10 +46,10 @@ class _StubConn:
     def __init__(self, raw: _StubRaw) -> None:
         self._conn = raw
 
-    async def execute(self, sql: str, *args: object) -> list[Any]:
-        if sql.strip().upper().startswith("SELECT"):
-            return list(await self._conn.fetch(sql, *args))
-        await self._conn.execute(sql, *args)
+    async def execute(self, query: str, *args: object) -> list[Any]:
+        if query.strip().upper().startswith("SELECT"):
+            return list(await self._conn.fetch(query, *args))
+        await self._conn.execute(query, *args)
         return []
 
     def transaction(self) -> _StubRaw:

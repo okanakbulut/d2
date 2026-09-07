@@ -60,10 +60,10 @@ class TestTableMeta:
         assert meta.schema == "public"
 
     def test_defaults(self):
-        from d2.model import _INFER
+        from d2.model import INFER
         meta = TableMeta()
         assert meta.table is None
-        assert meta.schema is _INFER
+        assert meta.schema is INFER
 
     def test_immutable(self):
         meta = TableMeta(table="users")

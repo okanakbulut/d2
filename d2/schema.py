@@ -13,7 +13,7 @@ import pypika.terms
 from pypika.utils import format_alias_sql, format_quotes
 
 from .filter import Filter, AnyFilter
-from .model import FieldDef, TableMeta, _INFER
+from .model import FieldDef, TableMeta, INFER
 from .dialect import Dialect, PostgresDialect
 from .query import InsertQuery, UpdateQuery, DeleteQuery, JoinClause
 
@@ -441,6 +441,12 @@ _FIELD_FLAGS: dict[type, dict[str, bool]] = {
 }
 
 
+def primary_key_field(model: type) -> "Field[Any] | None":
+    """The model's PrimaryKey proxy, or None when it declares no primary key."""
+    fields = cast("tuple[Field[Any], ...]", getattr(model, "__fields__", ()))
+    return next((f for f in fields if isinstance(f, PrimaryKey)), None)
+
+
 def _infer_table_name(class_name: str) -> str:
     name = re.sub(r"Model$", "", class_name)
     return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
@@ -489,19 +495,16 @@ def _parse_fields(model: type) -> list[tuple[str, type, FieldDef, type[Field[Any
         references: type | None = None
 
         # PrimaryKey[Table] is not allowed — use a separate id and ForeignKey(unique=True)
-        if issubclass(field_cls, PrimaryKey) and isinstance(python_type, type) and hasattr(python_type, "__fields__"):
+        if issubclass(field_cls, PrimaryKey) and hasattr(python_type, "__fields__"):
             raise TypeError(
                 f"{field_cls.__name__}[{python_type.__name__}] is not allowed. "
                 "Use a separate id: PrimaryKey[int] and a ForeignKey with unique=True instead."
             )
 
         # ForeignKey[Model] — resolve the referenced model's PK type
-        if issubclass(field_cls, ForeignKey) and isinstance(python_type, type) and hasattr(python_type, "__fields__"):
+        if issubclass(field_cls, ForeignKey) and hasattr(python_type, "__fields__"):
             referenced_model = python_type
-            pk_proxy = next(
-                (f for f in cast(Any, referenced_model).__fields__ if isinstance(f, PrimaryKey)),
-                None,
-            )
+            pk_proxy = primary_key_field(referenced_model)
             python_type = pk_proxy.python_type if pk_proxy else int
             references = referenced_model
 
@@ -533,7 +536,7 @@ def _parse_fields(model: type) -> list[tuple[str, type, FieldDef, type[Field[Any
 def _setup_table(cls: Any) -> None:
     meta: TableMeta | None = getattr(cls, "__meta__", None)
     table_name = (meta.table if meta and meta.table else None) or _infer_table_name(cls.__name__)
-    if meta is None or meta.schema is _INFER:
+    if meta is None or meta.schema is INFER:
         schema_name = _infer_schema(getattr(cls, "__module__", "") or "") or "public"
     elif meta.schema is None:
         schema_name = None

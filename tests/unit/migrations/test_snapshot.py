@@ -20,8 +20,8 @@ class TestModelsToSchemaState:
 
         state = models_to_schema_state([SnapWidget])
 
-        assert list(state.tables.keys()) == ["snap_widgets"]
-        t = state.tables["snap_widgets"]
+        assert list(state.tables.keys()) == ["snap_widget"]
+        t = state.tables["snap_widget"]
         assert list(t.columns.keys()) == ["label"]
         col = t.columns["label"]
         assert col.type == "TEXT"
@@ -34,7 +34,7 @@ class TestModelsToSchemaState:
             id: PrimaryKey[int] = field(default=db.serial())
 
         state = models_to_schema_state([SnapOrder])
-        col = state.tables["snap_orders"].columns["id"]
+        col = state.tables["snap_order"].columns["id"]
         # Per ADR-0004, state stores BIGINT + has_sequence_default
         assert col.type == "BIGINT"
         assert col.primary_key is True
@@ -45,7 +45,7 @@ class TestModelsToSchemaState:
         class SnapCounter(Table):
             n: Field[int]
 
-        col = models_to_schema_state([SnapCounter]).tables["snap_counters"].columns["n"]
+        col = models_to_schema_state([SnapCounter]).tables["snap_counter"].columns["n"]
         assert col.type == "BIGINT"
         assert col.has_sequence_default is False
 
@@ -63,7 +63,7 @@ class TestModelsToSchemaState:
             j_list: Field[list[object]]
             blob: Field[bytes]
 
-        cols = models_to_schema_state([SnapKitchenSink]).tables["snap_kitchen_sinks"].columns
+        cols = models_to_schema_state([SnapKitchenSink]).tables["snap_kitchen_sink"].columns
         assert cols["i"].type == "BIGINT"
         assert cols["s"].type == "TEXT"
         assert cols["f"].type == "DOUBLE PRECISION"
@@ -88,7 +88,7 @@ class TestModelsToSchemaState:
             match: Field[Match]
             color: Field[Color]
 
-        cols = models_to_schema_state([SnapMapping]).tables["snap_mappings"].columns
+        cols = models_to_schema_state([SnapMapping]).tables["snap_mapping"].columns
         assert cols["match"].type == "TEXT"
         assert cols["color"].type == "TEXT"
 
@@ -100,7 +100,7 @@ class TestModelsToSchemaState:
         class SnapTicket(Table):
             priority: Field[Priority]
 
-        col = models_to_schema_state([SnapTicket]).tables["snap_tickets"].columns["priority"]
+        col = models_to_schema_state([SnapTicket]).tables["snap_ticket"].columns["priority"]
         assert col.type == "INTEGER"
 
     def test_optional_str_enum_is_nullable_text(self):
@@ -110,7 +110,7 @@ class TestModelsToSchemaState:
         class SnapOptionalEnum(Table):
             match: Field[Match | None]
 
-        col = models_to_schema_state([SnapOptionalEnum]).tables["snap_optional_enums"].columns["match"]
+        col = models_to_schema_state([SnapOptionalEnum]).tables["snap_optional_enum"].columns["match"]
         assert col.type == "TEXT"
         assert col.nullable is True
 
@@ -121,14 +121,14 @@ class TestModelsToSchemaState:
         class SnapBadEnum(Table):
             shape: Field[Shape]
 
-        with pytest.raises(TypeError, match=r"snap_bad_enums\.shape: no SQL mapping"):
+        with pytest.raises(TypeError, match=r"snap_bad_enum\.shape: no SQL mapping"):
             models_to_schema_state([SnapBadEnum])
 
     def test_optional_field_is_nullable(self):
         class SnapMaybe(Table):
             name: Field[str | None]
 
-        col = models_to_schema_state([SnapMaybe]).tables["snap_maybes"].columns["name"]
+        col = models_to_schema_state([SnapMaybe]).tables["snap_maybe"].columns["name"]
         assert col.type == "TEXT"
         assert col.nullable is True
 

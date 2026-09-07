@@ -57,7 +57,7 @@ class TestCmdMake:
         assert rc == 0
         files = list((tmp_path / "migrations").glob("*.py"))
         assert len(files) == 1
-        assert files[0].name == "0001_create_cli_widgets.py"
+        assert files[0].name == "0001_create_cli_widget.py"
 
 
 class TestCmdCheck:

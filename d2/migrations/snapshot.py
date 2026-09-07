@@ -103,12 +103,12 @@ def sql_type_for(python_type: Any) -> str:
 
 
 def column_spec_for_field(field: _FieldProxy) -> ColumnState:
-    from d2.db import _SerialExpr
+    from d2.db import SerialExpr
     from d2.schema import PrimaryKey
 
     fd: _FieldDef = field.field_def
     is_pk = isinstance(field, PrimaryKey)
-    if isinstance(fd.default, _SerialExpr):
+    if isinstance(fd.default, SerialExpr):
         # ColumnState.__post_init__ normalizes BIGSERIAL → BIGINT + has_sequence_default=True
         return ColumnState(type="BIGSERIAL", nullable=False, primary_key=is_pk)
     sql_type = sql_type_for(field.python_type)
@@ -121,13 +121,16 @@ def column_spec_for_field(field: _FieldProxy) -> ColumnState:
     )
 
 
-def resolve_fk_target(target: Any) -> tuple[str | None, str, str]:
+def resolve_fk_target(target: object) -> tuple[str | None, str, str]:
     """Resolve a referenced Table subclass into (schema, table, pk_column)."""
-    from d2.schema import Table  # local import to avoid cycles
+    from d2.schema import Table, primary_key_field  # local import to avoid cycles
+
+    # Read off `target` while it is still plain `object`: once isinstance narrows
+    # it to a class, the type argument is unsolvable and the name goes Unknown.
+    target_name = type(target).__name__
 
     if isinstance(target, type) and issubclass(target, Table):
-        d2_table = cast(_D2Table, target)
-        pika_table = cast(pypika.Table, d2_table.__table__)
+        pika_table = target.__table__
         ref_table: str = pika_table.get_table_name()
         schema_obj: Any = getattr(pika_table, "_schema", None)
         ref_schema: str | None = (
@@ -135,12 +138,13 @@ def resolve_fk_target(target: Any) -> tuple[str | None, str, str]:
             if schema_obj
             else None
         )
-        from d2.schema import PrimaryKey
-        pk_proxy = next(f for f in d2_table.__fields__ if isinstance(f, PrimaryKey))
+        pk_proxy = primary_key_field(target)
+        if pk_proxy is None:
+            raise TypeError(f"ForeignKey target {target.__name__} has no primary key")
         return ref_schema, ref_table, pk_proxy.column_name
 
     raise TypeError(
-        f"ForeignKey target must be a Table subclass; got {type(target).__name__}"
+        f"ForeignKey target must be a Table subclass; got {target_name}"
     )
 
 

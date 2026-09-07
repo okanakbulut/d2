@@ -108,7 +108,7 @@ The `Dialect` protocol controls how parameterised placeholders are rendered. The
 ...     name: Field[str]
 ...
 >>> MyTable.select(MyTable.id).build(PostgresDialect())
-('SELECT "my_tables"."id" FROM "public"."my_tables"', ())
+('SELECT "my_table"."id" FROM "public"."my_table"', ())
 
 ```
 

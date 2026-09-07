@@ -33,7 +33,7 @@ class _DbFunc:
         return self._sql
 
 
-class _SerialExpr(_DbFunc):
+class SerialExpr(_DbFunc):
     """Sentinel for BIGSERIAL (sequence-backed integer PK). Handled specially by snapshot."""
 
 
@@ -47,9 +47,9 @@ def uuid() -> _DbFunc:
     return _DbFunc("uuid_generate_v4()")
 
 
-def serial() -> _SerialExpr:
+def serial() -> SerialExpr:
     """Sequence-backed integer primary key (BIGSERIAL)."""
-    return _SerialExpr("BIGSERIAL")
+    return SerialExpr("BIGSERIAL")
 
 
 def value(v: int | str | bool) -> _DbFunc:

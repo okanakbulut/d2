@@ -28,7 +28,7 @@ Pass column values as keyword arguments:
 ```python
 >>> q = User.insert(username="alice", email="alice@example.com")
 >>> q.build()
-('INSERT INTO "public"."users" ("username","email") VALUES ($1,$2)', ('alice', 'alice@example.com'))
+('INSERT INTO "public"."user" ("username","email") VALUES ($1,$2)', ('alice', 'alice@example.com'))
 
 ```
 
@@ -36,7 +36,7 @@ Pass column values as keyword arguments:
 
 ```python
 >>> User.insert(id=42, username="alice", email="alice@example.com").build()
-('INSERT INTO "public"."users" ("id","username","email") VALUES ($1,$2,$3)', (42, 'alice', 'alice@example.com'))
+('INSERT INTO "public"."user" ("id","username","email") VALUES ($1,$2,$3)', (42, 'alice', 'alice@example.com'))
 
 ```
 
@@ -50,7 +50,7 @@ Pass a list of dicts. All dicts must have the same keys:
 ...     {"username": "bob",   "email": "bob@example.com"},
 ... ]
 >>> User.insert(rows).build()
-('INSERT INTO "public"."users" ("username","email") VALUES ($1,$2)', [('alice', 'alice@example.com'), ('bob', 'bob@example.com')])
+('INSERT INTO "public"."user" ("username","email") VALUES ($1,$2)', [('alice', 'alice@example.com'), ('bob', 'bob@example.com')])
 
 ```
 
@@ -62,7 +62,7 @@ Get columns back from an insert:
 
 ```python
 >>> User.insert(username="alice", email="alice@example.com").returning(User.id).build()
-('INSERT INTO "public"."users" ("username","email") VALUES ($1,$2) RETURNING "users"."id"', ('alice', 'alice@example.com'))
+('INSERT INTO "public"."user" ("username","email") VALUES ($1,$2) RETURNING "user"."id"', ('alice', 'alice@example.com'))
 
 ```
 
@@ -82,7 +82,7 @@ Chain `.on_conflict(*target_fields)` after `.insert()` to build an `ON CONFLICT`
 ...     .do_nothing()
 ... )
 >>> q.build()
-('INSERT INTO "public"."users" ("username","email") VALUES ($1,$2) ON CONFLICT ("email") DO NOTHING', ('alice', 'alice@example.com'))
+('INSERT INTO "public"."user" ("username","email") VALUES ($1,$2) ON CONFLICT ("email") DO NOTHING', ('alice', 'alice@example.com'))
 
 ```
 
@@ -97,7 +97,7 @@ Chain `.on_conflict(*target_fields)` after `.insert()` to build an `ON CONFLICT`
 ...     .returning(User.id, User.username)
 ... )
 >>> q.build()
-('INSERT INTO "public"."users" ("username","email") VALUES ($1,$2) ON CONFLICT ("email") DO UPDATE SET "username"=$3, "email"=EXCLUDED."email" RETURNING "users"."id","users"."username"', ('alice', 'alice@example.com', 'alice_updated'))
+('INSERT INTO "public"."user" ("username","email") VALUES ($1,$2) ON CONFLICT ("email") DO UPDATE SET "username"=$3, "email"=EXCLUDED."email" RETURNING "user"."id","user"."username"', ('alice', 'alice@example.com', 'alice_updated'))
 
 ```
 
@@ -111,7 +111,7 @@ Chain `.on_conflict(*target_fields)` after `.insert()` to build an `ON CONFLICT`
 
 ```python
 >>> User.update(username="bob").where(User.id == 1).build()
-('UPDATE "public"."users" SET "username"=$1 WHERE "users"."id"=$2', ('bob', 1))
+('UPDATE "public"."user" SET "username"=$1 WHERE "user"."id"=$2', ('bob', 1))
 
 ```
 
@@ -125,7 +125,7 @@ Multiple `.where()` calls are ANDed together:
 ...     .where(User.email.isnotnull())
 ... )
 >>> q.build()
-('UPDATE "public"."users" SET "username"=$1,"email"=$2 WHERE "users"."id">$3 AND "users"."email" IS NOT NULL', ('bob', 'bob@example.com', 0))
+('UPDATE "public"."user" SET "username"=$1,"email"=$2 WHERE "user"."id">$3 AND "user"."email" IS NOT NULL', ('bob', 'bob@example.com', 0))
 
 ```
 
@@ -133,7 +133,7 @@ Assign a field value to another field (column-to-column update):
 
 ```python
 >>> Post.update(title=Post.body).where(Post.id == 1).build()
-('UPDATE "public"."posts" SET "title"="posts"."body" WHERE "posts"."id"=$1', (1,))
+('UPDATE "public"."post" SET "title"="post"."body" WHERE "post"."id"=$1', (1,))
 
 ```
 
@@ -143,7 +143,7 @@ Assign a field value to another field (column-to-column update):
 
 ```python
 >>> User.delete().where(User.id == 99).build()
-('DELETE FROM "public"."users" WHERE "users"."id"=$1', (99,))
+('DELETE FROM "public"."user" WHERE "user"."id"=$1', (99,))
 
 ```
 

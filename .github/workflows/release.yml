@@ -1,60 +1,185 @@
 name: Release
 
-# Publishes to PyPI when a version tag is pushed, e.g.:
-#   git tag v0.8.0 && git push origin v0.8.0
-# Uses PyPI trusted publishing (OIDC) — no API tokens are stored.
+# Run this from the Actions tab. It bumps the version, writes the changelog,
+# pushes the tag, publishes to PyPI (trusted publishing — no API tokens), and
+# cuts the GitHub Release.
+#
+# Defaults to `patch`. `auto` infers the bump from conventional commits since
+# the last tag, which only works once the history uses conventional messages —
+# d2's does not yet, so `auto` would stop with NO_COMMITS_TO_BUMP.
 
 on:
-  push:
-    tags: ['v*']
-
-permissions:
-  contents: read
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump type (auto = infer from conventional commits)"
+        required: false
+        default: "patch"
+        type: choice
+        options: [auto, patch, minor, major]
+      dry_run:
+        description: "Dry run — simulate bump without committing or pushing"
+        required: false
+        default: false
+        type: boolean
 
 jobs:
-  # Same doctest gate as the docs pipeline: no broken example ever ships.
-  test:
+  bump:
+    name: Bump version & push tag
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
       - uses: astral-sh/setup-uv@v8.3.2
         with:
           enable-cache: true
+
       - run: uv sync --frozen
-      - run: uv run pytest -m 'not integration'
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      # Same doctest gate as the docs pipeline: no broken example ever ships.
+      # Integration tests are deselected — they need a live PostgreSQL.
+      - name: Generate coverage badge
+        run: |
+          uv run pytest -m 'not integration' --cov=d2 --cov-report=xml -q
+          python - <<'EOF'
+          import xml.etree.ElementTree as ET
+          root = ET.parse("coverage.xml").getroot()
+          lines_valid = int(root.get("lines-valid", 0))
+          lines_covered = int(root.get("lines-covered", 0))
+          branches_valid = int(root.get("branches-valid", 0))
+          branches_covered = int(root.get("branches-covered", 0))
+          total = lines_valid + branches_valid
+          pct = round((lines_covered + branches_covered) / total * 100, 1) if total else 0.0
+          color = "brightgreen" if pct >= 90 else "yellow" if pct >= 75 else "red"
+          label, value = "coverage", f"{pct}%"
+          lw, vw = 62, len(value) * 7 + 10
+          w = lw + vw
+          svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="20">
+            <linearGradient id="s" x2="0" y2="100%"><stop offset="0" stop-color="#bbb" stop-opacity=".1"/><stop offset="1" stop-opacity=".1"/></linearGradient>
+            <rect rx="3" width="{w}" height="20" fill="#555"/>
+            <rect rx="3" x="{lw}" width="{vw}" height="20" fill="{color}"/>
+            <rect rx="3" width="{w}" height="20" fill="url(#s)"/>
+            <g fill="#fff" text-anchor="middle" font-family="DejaVu Sans,Verdana,Geneva,sans-serif" font-size="11">
+              <text x="{lw//2}" y="15" fill="#010101" fill-opacity=".3">{label}</text>
+              <text x="{lw//2}" y="14">{label}</text>
+              <text x="{lw + vw//2}" y="15" fill="#010101" fill-opacity=".3">{value}</text>
+              <text x="{lw + vw//2}" y="14">{value}</text>
+            </g>
+          </svg>"""
+          open("coverage.svg", "w").write(svg)
+          print(f"Coverage badge generated: {pct}%")
+          EOF
+
+      - name: Bump version
+        id: bump
+        run: |
+          DRY_RUN=${{ inputs.dry_run == true && '--dry-run' || '' }}
+          PREV_TAG="v$(uv run cz version --project)"
+          if git rev-parse "$PREV_TAG" >/dev/null 2>&1; then
+            CHANGELOG="--changelog"
+          else
+            CHANGELOG=""
+          fi
+          if [ "${{ inputs.bump }}" = "auto" ]; then
+            if ! uv run cz bump --yes $CHANGELOG $DRY_RUN; then
+              echo "::error::no conventional commits since $PREV_TAG — re-run with patch/minor/major"
+              exit 1
+            fi
+          else
+            uv run cz bump --increment ${{ inputs.bump }} --yes $CHANGELOG $DRY_RUN
+          fi
+          echo "version=$(uv run cz version --project)" >> "$GITHUB_OUTPUT"
+
+      # Keep uv.lock's own version entry in step with pyproject.toml.
+      - name: Refresh lockfile
+        if: ${{ inputs.dry_run != true }}
+        run: |
+          uv lock
+          git add uv.lock
+          git diff --cached --quiet || git commit -m "chore: refresh lockfile"
+
+      - name: Commit coverage badge
+        if: ${{ inputs.dry_run != true }}
+        run: |
+          git add coverage.svg
+          git diff --cached --quiet || git commit -m "chore: update coverage badge"
+
+      - name: Push tag and changelog
+        if: ${{ inputs.dry_run != true }}
+        run: |
+          git push
+          git push --tags
 
   build:
-    needs: test
+    name: Build distributions
+    needs: bump
+    if: ${{ inputs.dry_run != true }}
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v8.3.2
-      # Fail early if the tag doesn't match the version in pyproject.toml.
-      - name: Check tag matches package version
-        run: |
-          tag="${GITHUB_REF_NAME#v}"
-          pkg="$(uv version --short)"
-          if [ "$tag" != "$pkg" ]; then
-            echo "::error::tag v$tag does not match pyproject version $pkg"
-            exit 1
-          fi
-      - run: uv build
-      - uses: actions/upload-artifact@v4
         with:
-          name: dist
+          ref: main
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v8.3.2
+
+      - name: Build distributions
+        run: uv build
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-dists
           path: dist/
 
   publish:
+    name: Publish to PyPI
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write # required for trusted publishing
     environment:
       name: pypi
       url: https://pypi.org/project/d2/
-    permissions:
-      id-token: write # required for trusted publishing
+
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Download distributions
+        uses: actions/download-artifact@v8
         with:
-          name: dist
+          name: release-dists
           path: dist/
-      - uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    name: Create GitHub Release
+    needs: [bump, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v${{ needs.bump.outputs.version }}" --generate-notes

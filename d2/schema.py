@@ -89,25 +89,23 @@ class NamespacedField(pypika.Field):
         return field_sql
 
 T = TypeVar("T")
+_U = TypeVar("_U")  # function-scoped, for the factory staticmethods below
 
 
-class Field(Generic[T]):
+class Field(msgspec.Struct, Generic[T], frozen=True, eq=False):
+    """A column proxy: carries a column's identity and builds expressions from it.
+
+    One of these is resident for every column of every entity for the life of
+    the process, so the struct layout matters: it drops the per-instance
+    ``__dict__``, which was four fifths of the object. ``frozen`` supplies the
+    immutability that a ``__setattr__`` guard used to, and ``eq`` is off because
+    ``__eq__`` builds a :class:`Filter` rather than comparing.
+    """
+
     column_name: str
     python_type: type[T]
     field_def: FieldDef
     pika_field: pypika.Field
-
-    def __init__(
-        self,
-        column_name: str,
-        python_type: type[T],
-        field_def: FieldDef,
-        pika_field: pypika.Field,
-    ) -> None:
-        object.__setattr__(self, "column_name", column_name)
-        object.__setattr__(self, "python_type", python_type)
-        object.__setattr__(self, "field_def", field_def)
-        object.__setattr__(self, "pika_field", pika_field)
 
     @overload
     def __get__(self, obj: None, objtype: type) -> "Field[T]": ...
@@ -171,60 +169,58 @@ class Field(Generic[T]):
         return Filter(field=self, value=(lo, hi), op="between")
 
     def aliased(self, alias: str) -> "Field[T]":
-        new = cast("Field[T]", Field.__new__(Field))
-        object.__setattr__(new, "column_name", self.column_name)
-        object.__setattr__(new, "python_type", self.python_type)
-        object.__setattr__(new, "field_def", self.field_def)
-        object.__setattr__(new, "pika_field", self.pika_field.as_(alias))
-        return new
+        return Field(
+            self.column_name, self.python_type, self.field_def,
+            self.pika_field.as_(alias),
+        )
 
     def count(self, distinct: bool = False) -> "Field[int]":
         term = pypika.functions.Count(self.pika_field)
         if distinct:
             term = term.distinct()
-        return _AggField(int, term)
+        return _AggField.of(int, term)
 
     def sum(self) -> "Field[T]":
-        return _AggField(self.python_type, pypika.functions.Sum(self.pika_field))
+        return _AggField.of(self.python_type, pypika.functions.Sum(self.pika_field))
 
     def min(self) -> "Field[T]":
-        return _AggField(self.python_type, pypika.functions.Min(self.pika_field))
+        return _AggField.of(self.python_type, pypika.functions.Min(self.pika_field))
 
     def max(self) -> "Field[T]":
-        return _AggField(self.python_type, pypika.functions.Max(self.pika_field))
+        return _AggField.of(self.python_type, pypika.functions.Max(self.pika_field))
 
     def avg(self) -> "Field[float]":
-        return _AggField(float, pypika.functions.Avg(self.pika_field))
+        return _AggField.of(float, pypika.functions.Avg(self.pika_field))
 
     def coalesce(self, default: Any) -> "Field[T]":
-        return _CoalesceField(self, default)
+        return _CoalesceField.of(self, default)
 
     def cast(self, sql_type: str) -> "Field[Any]":
-        return _AggField(type(None), pypika.functions.Cast(self.pika_field, sql_type))
+        return _AggField.of(type(None), pypika.functions.Cast(self.pika_field, sql_type))
 
     def to_column(self, params: list[Any], dialect: Any) -> Any:
         return self.pika_field
 
     def desc(self) -> "_SortedField[T]":
-        return _SortedField(self, descending=True)
+        return _SortedField.of(self, True)
 
     def asc(self) -> "_SortedField[T]":
-        return _SortedField(self, descending=False)
+        return _SortedField.of(self, False)
 
     def over(self, *partition_by: "Field[Any]") -> "WindowSpec":
         return WindowSpec(pypika.analytics.RowNumber(), partition_by, ())
 
     def __add__(self, other: Any) -> "Field[Any]":
-        return _ArithField(self, "+", other)
+        return _ArithField.of(self, "+", other)
 
     def __sub__(self, other: Any) -> "Field[Any]":
-        return _ArithField(self, "-", other)
+        return _ArithField.of(self, "-", other)
 
     def __mul__(self, other: Any) -> "Field[Any]":
-        return _ArithField(self, "*", other)
+        return _ArithField.of(self, "*", other)
 
     def __truediv__(self, other: Any) -> "Field[Any]":
-        return _ArithField(self, "/", other)
+        return _ArithField.of(self, "/", other)
 
     def __hash__(self) -> int:
         return hash(self.column_name)
@@ -232,31 +228,30 @@ class Field(Generic[T]):
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self.column_name!r})"
 
-    def __setattr__(self, name: str, value: Any) -> None:
-        raise AttributeError(f"cannot set '{name}' on {type(self).__name__}")
 
+class _ArithField(Field[Any], frozen=True, eq=False):
+    # Defaulted so that `type(proxy)(...four base args...)` still builds one.
+    # _left is held as Any: Field defines __get__, so a Field-typed attribute
+    # reads back as T to a type checker rather than as the Field itself.
+    _left: Any = None
+    _op: str = ""
+    _right: Any = None
+    _alias: str | None = None
 
-class _ArithField(Field[Any]):
-    _left: Field[Any]
-    _op: str
-    _right: Any
-
-    def __init__(self, left: Field[Any], op: str, right: Any) -> None:
-        object.__setattr__(self, "column_name", left.column_name)
-        object.__setattr__(self, "python_type", left.python_type)
-        object.__setattr__(self, "field_def", left.field_def)
-        object.__setattr__(self, "pika_field", left.pika_field)
-        object.__setattr__(self, "_left", left)
-        object.__setattr__(self, "_op", op)
-        object.__setattr__(self, "_right", right)
+    @staticmethod
+    def of(left: Field[Any], op: str, right: Any, alias: str | None = None) -> "_ArithField":
+        return _ArithField(
+            left.column_name, left.python_type, left.field_def, left.pika_field,
+            left, op, right, alias,
+        )
 
     def aliased(self, alias: str) -> "Field[Any]":
-        new = _ArithField(self._left, self._op, self._right)
-        object.__setattr__(new, "_alias", alias)
-        return new
+        left: Field[Any] = self._left
+        return _ArithField.of(left, self._op, self._right, alias)
 
     def to_column(self, params: list[Any], dialect: Any) -> Any:
-        left_term = self._left.to_column(params, dialect)
+        left: Field[Any] = self._left
+        left_term = left.to_column(params, dialect)
         right = self._right
         op = self._op
         if isinstance(right, Field):
@@ -267,27 +262,24 @@ class _ArithField(Field[Any]):
         ops: dict[str, Any] = {"+": left_term + right_term, "-": left_term - right_term,
                                "*": left_term * right_term, "/": left_term / right_term}
         result = ops[op]
-        alias = getattr(self, "_alias", None)
-        if alias:
-            return result.as_(alias)
+        if self._alias:
+            return result.as_(self._alias)
         return result
 
 
 
-class _AggField(Field[T]):
+class _AggField(Field[T], frozen=True, eq=False):
     """A Field backed by a pypika aggregate (or scalar) term."""
 
-    def __init__(self, python_type: type[T], pika_term: pypika.terms.Term) -> None:
-        object.__setattr__(self, "column_name", "")
-        object.__setattr__(self, "python_type", python_type)
-        object.__setattr__(self, "field_def", FieldDef())
-        object.__setattr__(self, "pika_field", pika_term)
+    @staticmethod
+    def of(python_type: type[_U], pika_term: pypika.terms.Term) -> "_AggField[_U]":
+        return _AggField("", python_type, FieldDef(), cast(pypika.Field, pika_term))
 
     def to_column(self, params: list[Any], dialect: Any) -> Any:
         return self.pika_field
 
     def aliased(self, alias: str) -> Field[T]:
-        return _AggField(self.python_type, self.pika_field.as_(alias))
+        return _AggField.of(self.python_type, self.pika_field.as_(alias))
 
     def over(self, *partition_by: "Field[Any]") -> "WindowSpec":
         fn_name = getattr(self.pika_field, "name", "").upper()
@@ -297,36 +289,31 @@ class _AggField(Field[T]):
         return WindowSpec(analytic_fn, partition_by, ())
 
 
-class _CoalesceField(Field[T]):
+class _CoalesceField(Field[T], frozen=True, eq=False):
     """COALESCE(col, default) — default is bound as a parameter at build time."""
 
-    _source: Field[T]
-    _default: Any
+    _source: Any = None        # a Field[T]; see note on _ArithField._left
+    _default: Any = None
+    _alias: str | None = None
 
-    def __init__(self, source: Field[T], default: Any) -> None:
-        object.__setattr__(self, "column_name", source.column_name)
-        object.__setattr__(self, "python_type", source.python_type)
-        object.__setattr__(self, "field_def", source.field_def)
-        object.__setattr__(self, "pika_field", source.pika_field)
-        object.__setattr__(self, "_source", source)
-        object.__setattr__(self, "_default", default)
+    @staticmethod
+    def of(source: Field[_U], default: Any, alias: str | None = None) -> "_CoalesceField[_U]":
+        return _CoalesceField(
+            source.column_name, source.python_type, source.field_def,
+            source.pika_field, source, default, alias,
+        )
 
     def aliased(self, alias: str) -> Field[T]:
-        source: Field[T] = object.__getattribute__(self, "_source")
-        default: Any = object.__getattribute__(self, "_default")
-        new = _CoalesceField(source, default)
-        object.__setattr__(new, "_alias", alias)
-        return new
+        source: Field[T] = self._source
+        return _CoalesceField.of(source, self._default, alias)
 
     def to_column(self, params: list[Any], dialect: Any) -> Any:
-        default: Any = object.__getattribute__(self, "_default")
-        source: Field[Any] = object.__getattribute__(self, "_source")
-        params.append(default)
+        source: Field[Any] = self._source
+        params.append(self._default)
         default_term = pypika.terms.Parameter(dialect.placeholder(len(params)))
         term = pypika.functions.Coalesce(source.pika_field, default_term)
-        alias = getattr(self, "_alias", None)
-        if alias:
-            return term.as_(alias)
+        if self._alias:
+            return term.as_(self._alias)
         return term
 
 
@@ -339,17 +326,17 @@ _ANALYTIC_FN_MAP: dict[str, type] = {
 }
 
 
-class _SortedField(Field[T]):
+class _SortedField(Field[T], frozen=True, eq=False):
     """A Field annotated with a sort direction; produced by Field.desc() / Field.asc()."""
 
-    descending: bool
+    descending: bool = False
 
-    def __init__(self, source: "Field[T]", descending: bool) -> None:
-        object.__setattr__(self, "column_name", source.column_name)
-        object.__setattr__(self, "python_type", source.python_type)
-        object.__setattr__(self, "field_def", source.field_def)
-        object.__setattr__(self, "pika_field", source.pika_field)
-        object.__setattr__(self, "descending", descending)
+    @staticmethod
+    def of(source: "Field[_U]", descending: bool) -> "_SortedField[_U]":
+        return _SortedField(
+            source.column_name, source.python_type, source.field_def,
+            source.pika_field, descending,
+        )
 
 
 class WindowSpec:
@@ -377,7 +364,7 @@ class WindowSpec:
                 term = term.orderby(f.pika_field, order=order)
             else:
                 term = term.orderby(f.pika_field)
-        return _AggField(type(None), term.as_(alias))
+        return _AggField.of(type(None), term.as_(alias))
 
 
 class _RawTerm(pypika.terms.Term):
@@ -406,30 +393,28 @@ class _ExcludedTerm(pypika.terms.Term):
 
 def excluded(proxy: "Field[T]") -> "Field[T]":
     """Clone a FieldProxy that renders as EXCLUDED."column" in ON CONFLICT DO UPDATE."""
-    new: Field[T] = Field.__new__(type(proxy))
-    object.__setattr__(new, "column_name", proxy.column_name)
-    object.__setattr__(new, "python_type", proxy.python_type)
-    object.__setattr__(new, "field_def", proxy.field_def)
-    object.__setattr__(new, "pika_field", _ExcludedTerm(proxy.column_name))
-    return new
+    return type(proxy)(
+        proxy.column_name, proxy.python_type, proxy.field_def,
+        cast(pypika.Field, _ExcludedTerm(proxy.column_name)),
+    )
 
 
 Column = Field  # alias
 
 
-class PrimaryKey(Field[T]):
+class PrimaryKey(Field[T], frozen=True, eq=False):
     pass
 
 
-class Unique(Field[T]):
+class Unique(Field[T], frozen=True, eq=False):
     pass
 
 
-class Index(Field[T]):
+class Index(Field[T], frozen=True, eq=False):
     pass
 
 
-class ForeignKey(Field[T]):
+class ForeignKey(Field[T], frozen=True, eq=False):
     pass
 
 

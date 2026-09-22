@@ -2,13 +2,13 @@
 
 
 import tomllib
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
+import msgspec
 
-@dataclass(frozen=True)
-class D2Config:
+
+class D2Config(msgspec.Struct, frozen=True):
     migrations_dir: Path
     models: str  # dotted module path
 

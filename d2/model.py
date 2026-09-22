@@ -1,6 +1,7 @@
 
-from dataclasses import dataclass
 from typing import Any
+
+import msgspec
 
 from .db import DbExpr, ReferentialAction
 
@@ -9,8 +10,7 @@ from .db import DbExpr, ReferentialAction
 INFER: Any = object()
 
 
-@dataclass(frozen=True)
-class FieldDef:
+class FieldDef(msgspec.Struct, frozen=True):
     default: DbExpr | None = None
     index: bool = False
     unique: bool = False
@@ -40,8 +40,7 @@ def field(
     )
 
 
-@dataclass(frozen=True)
-class IndexDef:
+class IndexDef(msgspec.Struct, frozen=True):
     columns: tuple[str, ...]
     name: str | None = None
     unique: bool = False
@@ -49,8 +48,7 @@ class IndexDef:
     where: str | None = None  # partial-index predicate (SQL, no leading WHERE)
 
 
-@dataclass(frozen=True)
-class TableMeta:
+class TableMeta(msgspec.Struct, frozen=True):
     table: str | None = None
     schema: str | None = INFER  # type: ignore[assignment]  — None = no prefix; default = infer from module
     indexes: tuple[IndexDef, ...] = ()

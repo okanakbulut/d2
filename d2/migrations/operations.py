@@ -1,11 +1,12 @@
-"""DDL operation dataclasses.
+"""DDL operation structs.
 
 Tracer slice (issue 140) implements `CreateTable` + `ColumnDef` only.
 Each op has `apply(state)` (mutates SchemaState) and `to_ddl()` (returns SQL).
 """
 
-from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, ClassVar, Union
+
+import msgspec
 
 from .state import (
     ColumnState,
@@ -44,7 +45,7 @@ OP_REGISTRY: dict[str, type] = {}
 
 
 class _OpBase:
-    """Non-dataclass mixin that registers each concrete op class by its import name."""
+    """Non-Struct mixin that registers each concrete op class by its import name."""
 
     _import_name: ClassVar[str]
 
@@ -148,8 +149,7 @@ def qualify(schema: str | None, table: str) -> str:
     return f'"{table}"'
 
 
-@dataclass
-class CreateTable(_OpBase):
+class CreateTable(_OpBase, msgspec.Struct):
     _import_name: ClassVar[str] = "CreateTable"
     table: str
     columns: dict[str, ColumnDef]
@@ -177,8 +177,7 @@ class CreateTable(_OpBase):
         state.tables[self.table] = TableState(columns=dict(self.columns), schema=self.schema)
 
 
-@dataclass
-class DropTable(_OpBase):
+class DropTable(_OpBase, msgspec.Struct):
     _import_name: ClassVar[str] = "DropTable"
     table: str
     schema: str | None = None
@@ -206,8 +205,7 @@ def require_column(state: SchemaState, table: str, column: str) -> ColumnState:
     return t.columns[column]
 
 
-@dataclass
-class AddColumn(_OpBase):
+class AddColumn(_OpBase, msgspec.Struct):
     _import_name: ClassVar[str] = "AddColumn"
     table: str
     column: str
@@ -249,8 +247,7 @@ class AddColumn(_OpBase):
         )
 
 
-@dataclass
-class DropColumn(_OpBase):
+class DropColumn(_OpBase, msgspec.Struct):
     _import_name: ClassVar[str] = "DropColumn"
     table: str
     column: str
@@ -273,8 +270,7 @@ class DropColumn(_OpBase):
         del state.tables[self.table].columns[self.column]
 
 
-@dataclass
-class RenameColumn(_OpBase):
+class RenameColumn(_OpBase, msgspec.Struct):
     _import_name: ClassVar[str] = "RenameColumn"
     table: str
     old_name: str
@@ -314,8 +310,7 @@ class RenameColumn(_OpBase):
         )
 
 
-@dataclass
-class AlterColumnType(_OpBase):
+class AlterColumnType(_OpBase, msgspec.Struct):
     _import_name: ClassVar[str] = "AlterColumnType"
     table: str
     column: str
@@ -339,8 +334,7 @@ class AlterColumnType(_OpBase):
         col.type = self.type
 
 
-@dataclass
-class SetColumnNotNull(_OpBase):
+class SetColumnNotNull(_OpBase, msgspec.Struct):
     _import_name: ClassVar[str] = "SetColumnNotNull"
     table: str
     column: str
@@ -363,8 +357,7 @@ class SetColumnNotNull(_OpBase):
         col.nullable = False
 
 
-@dataclass
-class DropColumnNotNull(_OpBase):
+class DropColumnNotNull(_OpBase, msgspec.Struct):
     _import_name: ClassVar[str] = "DropColumnNotNull"
     table: str
     column: str
@@ -387,8 +380,7 @@ class DropColumnNotNull(_OpBase):
         col.nullable = True
 
 
-@dataclass
-class SetColumnDefault(_OpBase):
+class SetColumnDefault(_OpBase, msgspec.Struct):
     _import_name: ClassVar[str] = "SetColumnDefault"
     table: str
     column: str
@@ -412,8 +404,7 @@ class SetColumnDefault(_OpBase):
         col.default = self.default
 
 
-@dataclass
-class DropColumnDefault(_OpBase):
+class DropColumnDefault(_OpBase, msgspec.Struct):
     _import_name: ClassVar[str] = "DropColumnDefault"
     table: str
     column: str
@@ -476,8 +467,7 @@ def constraint_sql(constraint: Constraint) -> str:
     return " ".join(parts)
 
 
-@dataclass
-class AddConstraint(_OpBase):
+class AddConstraint(_OpBase, msgspec.Struct):
     _import_name: ClassVar[str] = "AddConstraint"
     table: str
     constraint: ConstraintDict | Constraint
@@ -511,8 +501,7 @@ class AddConstraint(_OpBase):
         t.constraints.append(self._typed_constraint())
 
 
-@dataclass
-class DropConstraint(_OpBase):
+class DropConstraint(_OpBase, msgspec.Struct):
     _import_name: ClassVar[str] = "DropConstraint"
     table: str
     name: str
@@ -535,8 +524,7 @@ class DropConstraint(_OpBase):
         t.constraints = [c for c in t.constraints if c.name != self.name]
 
 
-@dataclass
-class CreateIndex(_OpBase):
+class CreateIndex(_OpBase, msgspec.Struct):
     _import_name: ClassVar[str] = "CreateIndex"
     table: str
     columns: tuple[str, ...]
@@ -587,8 +575,7 @@ class CreateIndex(_OpBase):
         )
 
 
-@dataclass
-class DropIndex(_OpBase):
+class DropIndex(_OpBase, msgspec.Struct):
     _import_name: ClassVar[str] = "DropIndex"
     name: str
     concurrent: bool = True
@@ -618,8 +605,7 @@ class DropIndex(_OpBase):
             table.indexes = [i for i in table.indexes if i.name != self.name]
 
 
-@dataclass
-class CreateExtension(_OpBase):
+class CreateExtension(_OpBase, msgspec.Struct):
     _import_name: ClassVar[str] = "CreateExtension"
     name: str
 
@@ -633,8 +619,7 @@ class CreateExtension(_OpBase):
         state.extensions.add(self.name)
 
 
-@dataclass
-class DropExtension(_OpBase):
+class DropExtension(_OpBase, msgspec.Struct):
     _import_name: ClassVar[str] = "DropExtension"
     name: str
 
@@ -648,8 +633,7 @@ class DropExtension(_OpBase):
         state.extensions.discard(self.name)
 
 
-@dataclass
-class CreateSchema(_OpBase):
+class CreateSchema(_OpBase, msgspec.Struct):
     _import_name: ClassVar[str] = "CreateSchema"
     name: str
 
@@ -663,8 +647,7 @@ class CreateSchema(_OpBase):
         state.schemas.add(self.name)
 
 
-@dataclass
-class DropSchema(_OpBase):
+class DropSchema(_OpBase, msgspec.Struct):
     _import_name: ClassVar[str] = "DropSchema"
     name: str
     cascade: bool = False
@@ -682,8 +665,7 @@ class DropSchema(_OpBase):
         state.schemas.discard(self.name)
 
 
-@dataclass
-class CreateView(_OpBase):
+class CreateView(_OpBase, msgspec.Struct):
     _import_name: ClassVar[str] = "CreateView"
     name: str
     definition: str
@@ -711,8 +693,7 @@ class CreateView(_OpBase):
         )
 
 
-@dataclass
-class RunSQL(_OpBase):
+class RunSQL(_OpBase, msgspec.Struct):
     """Data-only escape hatch: execute raw SQL at apply time.
 
     `apply(state)` is a no-op — RunSQL never mutates the schema model.
@@ -731,8 +712,7 @@ class RunSQL(_OpBase):
         return None
 
 
-@dataclass
-class RunPython(_OpBase):
+class RunPython(_OpBase, msgspec.Struct):
     """Data-only escape hatch: run an async Python function at apply time.
 
     `apply(state)` is a no-op. The runner awaits ``fn(conn)`` where ``conn``
@@ -751,8 +731,7 @@ class RunPython(_OpBase):
         return None
 
 
-@dataclass
-class DropView(_OpBase):
+class DropView(_OpBase, msgspec.Struct):
     _import_name: ClassVar[str] = "DropView"
     name: str
     schema: str | None = None

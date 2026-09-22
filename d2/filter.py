@@ -1,6 +1,7 @@
 
-from dataclasses import dataclass, field as dc_field
 from typing import TYPE_CHECKING, Any
+
+import msgspec
 
 import pypika.terms
 
@@ -8,11 +9,10 @@ if TYPE_CHECKING:
     from .schema import Field
 
 
-@dataclass(frozen=True)
-class Filter:
+class Filter(msgspec.Struct, frozen=True):
     field: "Field[Any]"
     value: Any
-    op: str = dc_field(default="eq")
+    op: str = "eq"
 
     def __and__(self, other: "Filter | CompoundFilter") -> "CompoundFilter":
         return CompoundFilter(left=self, right=other, op="and")
@@ -100,8 +100,7 @@ class Filter:
         raise ValueError(f"unknown filter op: {self.op!r}")
 
 
-@dataclass(frozen=True)
-class CompoundFilter:
+class CompoundFilter(msgspec.Struct, frozen=True):
     left: "Filter | CompoundFilter"
     right: "Filter | CompoundFilter"
     op: str  # "and" | "or"

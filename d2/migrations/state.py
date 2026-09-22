@@ -5,8 +5,9 @@ present but empty for forward compatibility.
 """
 
 
-from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, ClassVar
+
+import msgspec
 
 
 # Backward-compat aliases: existing migration files on disk pass raw dicts to
@@ -15,15 +16,32 @@ ConstraintDict = dict[str, Any]
 IndexDict = dict[str, Any]
 
 
-@dataclass
-class UniqueConstraint:
+class _TaggedConstraint(msgspec.Struct):
+    """Constraint variant carrying a `type` tag.
+
+    The tag is a ClassVar rather than a field, so it cannot be passed to the
+    constructor -- a UniqueConstraint can never claim to be a foreign key, which
+    matters because `constraint_from_dict` rebuilds these from the tag alone.
+    ClassVars are absent from msgspec's generated repr, so it is restored here;
+    the field list comes from the struct itself and cannot drift.
+    """
+
+    type: ClassVar[str]
+
+    def __repr__(self) -> str:
+        args = ", ".join(
+            f"{f.name}={getattr(self, f.name)!r}" for f in msgspec.structs.fields(self)
+        )
+        return f"{type(self).__name__}({args}, type={self.type!r})"
+
+
+class UniqueConstraint(_TaggedConstraint):
     name: str
     columns: tuple[str, ...]
-    type: str = field(default="unique", init=False)
+    type: ClassVar[str] = "unique"
 
 
-@dataclass
-class ForeignKeyConstraint:
+class ForeignKeyConstraint(_TaggedConstraint):
     name: str
     columns: tuple[str, ...]
     references_schema: str | None
@@ -31,11 +49,10 @@ class ForeignKeyConstraint:
     references_column: str
     on_delete: str | None = None
     on_update: str | None = None
-    type: str = field(default="foreign_key", init=False)
+    type: ClassVar[str] = "foreign_key"
 
 
-@dataclass
-class IndexDef:
+class IndexDef(msgspec.Struct):
     name: str
     columns: tuple[str, ...]
     unique: bool = False
@@ -66,8 +83,7 @@ class SchemaError(Exception):
     """Raised when an operation cannot be applied to the current SchemaState."""
 
 
-@dataclass
-class ColumnState:
+class ColumnState(msgspec.Struct):
     type: str                # SQL type — normalized (never SERIAL/BIGSERIAL/SMALLSERIAL)
     nullable: bool = True
     default: str | None = None
@@ -92,32 +108,21 @@ class ColumnState:
         return " ".join(parts)
 
 
-def _empty_constraints() -> list[Constraint]:
-    return []
-
-
-def _empty_indexes() -> list[IndexDef]:
-    return []
-
-
-@dataclass
-class TableState:
+class TableState(msgspec.Struct):
     columns: dict[str, ColumnState]
-    constraints: list[Constraint] = field(default_factory=_empty_constraints)
-    indexes: list[IndexDef] = field(default_factory=_empty_indexes)
+    constraints: list[Constraint] = []
+    indexes: list[IndexDef] = []
     schema: str | None = None
 
 
-@dataclass
-class ViewState:
+class ViewState(msgspec.Struct):
     definition: str
     columns: tuple[tuple[str, type[Any]], ...]
     schema: str | None = None
 
 
-@dataclass
-class SchemaState:
-    tables: dict[str, TableState] = field(default_factory=dict[str, TableState])
-    views: dict[str, ViewState] = field(default_factory=dict[str, ViewState])
-    extensions: set[str] = field(default_factory=set[str])
-    schemas: set[str] = field(default_factory=set[str])
+class SchemaState(msgspec.Struct):
+    tables: dict[str, TableState] = {}
+    views: dict[str, ViewState] = {}
+    extensions: set[str] = set()
+    schemas: set[str] = set()

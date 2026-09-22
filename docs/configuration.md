@@ -24,7 +24,7 @@ Both keys are optional:
 
 ## D2Config
 
-`D2Config` is the dataclass that holds resolved configuration. Use it when calling migration internals programmatically:
+`D2Config` is the struct that holds resolved configuration. Use it when calling migration internals programmatically:
 
 ```python
 >>> from d2.migrations.config import D2Config, load_config

@@ -4,20 +4,23 @@ column aliasing, arithmetic expressions, and insert."""
 import pytest
 
 from d2 import TableMeta, Table
-from d2.schema import Field, PrimaryKey
+from d2.schema import Field, PrimaryKey, Query
 from .conftest import Users, UserModelExplicit
 
 
 class TestSelect:
-    def test_select_returns_entity_type(self):
+    def test_select_returns_a_query_over_the_entity(self):
+        # A query used to be a subclass of the entity; it is now a value beside
+        # it, so that a builder step costs a struct copy and not a new class.
         result = Users.select(Users.id, Users.name, Users.email)
-        assert isinstance(result, type)
-        assert issubclass(result, Users)
+        assert isinstance(result, Query)
+        assert result.entity is Users
 
-    def test_select_all_returns_entity_type(self):
+    def test_select_all_returns_a_query_over_the_entity(self):
         result = Users.select_all()
-        assert isinstance(result, type)
-        assert issubclass(result, Users)
+        assert isinstance(result, Query)
+        assert result.entity is Users
+        assert result.columns == Users.__fields__
 
     def test_build_select_columns(self):
         sql, params = Users.select(Users.id, Users.name, Users.email).build()

@@ -4,6 +4,7 @@ import pytest
 
 from d2 import db
 from d2 import TableMeta, Field, PrimaryKey, Unique, Index, Table, View, field
+from d2.schema import Query
 
 
 # ---------------------------------------------------------------------------
@@ -164,15 +165,17 @@ class TestFieldPredicates:
 # ---------------------------------------------------------------------------
 
 class TestQueryBuilder:
-    def test_select_returns_entity_type(self):
+    def test_select_returns_a_query_over_the_entity(self):
+        # A query used to be a subclass of the entity; it is now a value beside
+        # it, so that a builder step costs a struct copy and not a new class.
         q = Users.select(Users.id, Users.name, Users.email)
-        assert isinstance(q, type)
-        assert issubclass(q, Users)
+        assert isinstance(q, Query)
+        assert q.entity is Users
 
-    def test_select_all_returns_entity_type(self):
+    def test_select_all_returns_a_query_over_the_entity(self):
         q = Users.select_all()
-        assert isinstance(q, type)
-        assert issubclass(q, Users)
+        assert isinstance(q, Query)
+        assert q.entity is Users
 
     def test_where_returns_new_query_builder(self):
         base = Users.select(Users.id)

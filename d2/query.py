@@ -1,6 +1,7 @@
 
-from dataclasses import dataclass, field as dc_field
 from typing import TYPE_CHECKING, Any, cast
+
+import msgspec
 
 import pypika
 import pypika.enums
@@ -13,15 +14,14 @@ if TYPE_CHECKING:
     from .schema import Field as D2Field, Selectable
 
 
-@dataclass(frozen=True)
-class ConflictBuilder:
+class ConflictBuilder(msgspec.Struct, frozen=True):
     """Intermediate/terminal builder produced by InsertQuery.on_conflict()."""
 
     insert: Any  # InsertQuery
     targets: tuple[Any, ...]  # tuple[D2Field, ...]
     action: str = ""  # "nothing" | "update"
-    assignments: tuple[tuple[str, Any], ...] = dc_field(default_factory=tuple)
-    returning_fields: tuple[Any, ...] = dc_field(default_factory=tuple)  # tuple[D2Field, ...]
+    assignments: tuple[tuple[str, Any], ...] = ()
+    returning_fields: tuple[Any, ...] = ()  # tuple[D2Field, ...]
 
     def do_nothing(self) -> "ConflictBuilder":
         return ConflictBuilder(insert=self.insert, targets=self.targets, action="nothing")
@@ -83,15 +83,13 @@ class ConflictBuilder:
         return sql, base_params
 
 
-@dataclass(frozen=True)
-class ScalarSubquery:
+class ScalarSubquery(msgspec.Struct, frozen=True):
     inner: Any  # Entity clone type (Selectable subclass)
 
 
-@dataclass(frozen=True)
-class JoinClause:
-    table: pypika.Table | type[Selectable]
-    criterion: AnyFilter | None
+class JoinClause(msgspec.Struct, frozen=True):
+    table: "pypika.Table | type[Selectable]"
+    criterion: "AnyFilter | None"
     kind: str  # "inner" | "left" | "right" | "cross"
 
     def apply_to(self, q: Any, params: list[Any], dialect: Dialect, cte_names: frozenset[str] = frozenset()) -> Any:
@@ -145,12 +143,11 @@ class JoinClause:
         return q
 
 
-@dataclass(frozen=True)
-class InsertQuery:
+class InsertQuery(msgspec.Struct, frozen=True):
     source: pypika.Table
     rows: tuple[dict[str, Any], ...]
     is_many: bool = False
-    returning_fields: tuple[D2Field[Any], ...] = dc_field(default_factory=tuple)
+    returning_fields: "tuple[D2Field[Any], ...]" = ()
 
     def returning(self, *fields: D2Field[Any]) -> InsertQuery:
         return InsertQuery(
@@ -179,11 +176,10 @@ class InsertQuery:
         return sql, tuple(self.rows[0][col] for col in columns)
 
 
-@dataclass(frozen=True)
-class UpdateQuery:
+class UpdateQuery(msgspec.Struct, frozen=True):
     source: pypika.Table
     assignments: tuple[tuple[str, Any], ...]
-    filters: tuple[Filter, ...] = dc_field(default_factory=tuple)
+    filters: "tuple[Filter, ...]" = ()
 
     def where(self, filter: Filter) -> UpdateQuery:
         return UpdateQuery(
@@ -207,10 +203,9 @@ class UpdateQuery:
         return q.get_sql(quote_char='"'), tuple(params)
 
 
-@dataclass(frozen=True)
-class DeleteQuery:
+class DeleteQuery(msgspec.Struct, frozen=True):
     source: pypika.Table
-    filters: tuple[Filter, ...] = dc_field(default_factory=tuple)
+    filters: "tuple[Filter, ...]" = ()
 
     def where(self, filter: Filter) -> DeleteQuery:
         return DeleteQuery(
@@ -227,8 +222,5 @@ class DeleteQuery:
 
 
 def With(*ctes: Any, query: Any, recursive: bool = False) -> Any:
-    """Create a CTE query by cloning query and attaching named CTE views."""
-    q = query.clone()
-    q.__ctes__ = ctes
-    q.__recursive__ = recursive
-    return q
+    """Attach named CTE views to a query."""
+    return msgspec.structs.replace(query, ctes=ctes, recursive=recursive)

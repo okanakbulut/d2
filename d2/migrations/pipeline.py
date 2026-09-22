@@ -1,7 +1,8 @@
 """Schema diff pipeline: replay → snapshot → diff."""
 
-from dataclasses import dataclass
 from pathlib import Path
+
+import msgspec
 
 from .draft import diff_states
 from .operations import Operation
@@ -10,8 +11,7 @@ from .snapshot import models_to_schema_state
 from .state import SchemaState
 
 
-@dataclass
-class SchemaPipeline:
+class SchemaPipeline(msgspec.Struct):
     current: SchemaState
     target: SchemaState
     forward: list[Operation]

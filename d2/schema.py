@@ -5,6 +5,7 @@ import typing
 from enum import Enum
 from typing import Any, ClassVar, Generic, Self, TypeVar, cast, overload
 
+import msgspec
 import pypika
 import pypika.analytics
 import pypika.enums
@@ -88,25 +89,23 @@ class NamespacedField(pypika.Field):
         return field_sql
 
 T = TypeVar("T")
+_U = TypeVar("_U")  # function-scoped, for the factory staticmethods below
 
 
-class Field(Generic[T]):
+class Field(msgspec.Struct, Generic[T], frozen=True, eq=False):
+    """A column proxy: carries a column's identity and builds expressions from it.
+
+    One of these is resident for every column of every entity for the life of
+    the process, so the struct layout matters: it drops the per-instance
+    ``__dict__``, which was four fifths of the object. ``frozen`` supplies the
+    immutability that a ``__setattr__`` guard used to, and ``eq`` is off because
+    ``__eq__`` builds a :class:`Filter` rather than comparing.
+    """
+
     column_name: str
     python_type: type[T]
     field_def: FieldDef
     pika_field: pypika.Field
-
-    def __init__(
-        self,
-        column_name: str,
-        python_type: type[T],
-        field_def: FieldDef,
-        pika_field: pypika.Field,
-    ) -> None:
-        object.__setattr__(self, "column_name", column_name)
-        object.__setattr__(self, "python_type", python_type)
-        object.__setattr__(self, "field_def", field_def)
-        object.__setattr__(self, "pika_field", pika_field)
 
     @overload
     def __get__(self, obj: None, objtype: type) -> "Field[T]": ...
@@ -170,60 +169,58 @@ class Field(Generic[T]):
         return Filter(field=self, value=(lo, hi), op="between")
 
     def aliased(self, alias: str) -> "Field[T]":
-        new = cast("Field[T]", Field.__new__(Field))
-        object.__setattr__(new, "column_name", self.column_name)
-        object.__setattr__(new, "python_type", self.python_type)
-        object.__setattr__(new, "field_def", self.field_def)
-        object.__setattr__(new, "pika_field", self.pika_field.as_(alias))
-        return new
+        return Field(
+            self.column_name, self.python_type, self.field_def,
+            self.pika_field.as_(alias),
+        )
 
     def count(self, distinct: bool = False) -> "Field[int]":
         term = pypika.functions.Count(self.pika_field)
         if distinct:
             term = term.distinct()
-        return _AggField(int, term)
+        return _AggField.of(int, term)
 
     def sum(self) -> "Field[T]":
-        return _AggField(self.python_type, pypika.functions.Sum(self.pika_field))
+        return _AggField.of(self.python_type, pypika.functions.Sum(self.pika_field))
 
     def min(self) -> "Field[T]":
-        return _AggField(self.python_type, pypika.functions.Min(self.pika_field))
+        return _AggField.of(self.python_type, pypika.functions.Min(self.pika_field))
 
     def max(self) -> "Field[T]":
-        return _AggField(self.python_type, pypika.functions.Max(self.pika_field))
+        return _AggField.of(self.python_type, pypika.functions.Max(self.pika_field))
 
     def avg(self) -> "Field[float]":
-        return _AggField(float, pypika.functions.Avg(self.pika_field))
+        return _AggField.of(float, pypika.functions.Avg(self.pika_field))
 
     def coalesce(self, default: Any) -> "Field[T]":
-        return _CoalesceField(self, default)
+        return _CoalesceField.of(self, default)
 
     def cast(self, sql_type: str) -> "Field[Any]":
-        return _AggField(type(None), pypika.functions.Cast(self.pika_field, sql_type))
+        return _AggField.of(type(None), pypika.functions.Cast(self.pika_field, sql_type))
 
     def to_column(self, params: list[Any], dialect: Any) -> Any:
         return self.pika_field
 
     def desc(self) -> "_SortedField[T]":
-        return _SortedField(self, descending=True)
+        return _SortedField.of(self, True)
 
     def asc(self) -> "_SortedField[T]":
-        return _SortedField(self, descending=False)
+        return _SortedField.of(self, False)
 
     def over(self, *partition_by: "Field[Any]") -> "WindowSpec":
         return WindowSpec(pypika.analytics.RowNumber(), partition_by, ())
 
     def __add__(self, other: Any) -> "Field[Any]":
-        return _ArithField(self, "+", other)
+        return _ArithField.of(self, "+", other)
 
     def __sub__(self, other: Any) -> "Field[Any]":
-        return _ArithField(self, "-", other)
+        return _ArithField.of(self, "-", other)
 
     def __mul__(self, other: Any) -> "Field[Any]":
-        return _ArithField(self, "*", other)
+        return _ArithField.of(self, "*", other)
 
     def __truediv__(self, other: Any) -> "Field[Any]":
-        return _ArithField(self, "/", other)
+        return _ArithField.of(self, "/", other)
 
     def __hash__(self) -> int:
         return hash(self.column_name)
@@ -231,31 +228,30 @@ class Field(Generic[T]):
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self.column_name!r})"
 
-    def __setattr__(self, name: str, value: Any) -> None:
-        raise AttributeError(f"cannot set '{name}' on {type(self).__name__}")
 
+class _ArithField(Field[Any], frozen=True, eq=False):
+    # Defaulted so that `type(proxy)(...four base args...)` still builds one.
+    # _left is held as Any: Field defines __get__, so a Field-typed attribute
+    # reads back as T to a type checker rather than as the Field itself.
+    _left: Any = None
+    _op: str = ""
+    _right: Any = None
+    _alias: str | None = None
 
-class _ArithField(Field[Any]):
-    _left: Field[Any]
-    _op: str
-    _right: Any
-
-    def __init__(self, left: Field[Any], op: str, right: Any) -> None:
-        object.__setattr__(self, "column_name", left.column_name)
-        object.__setattr__(self, "python_type", left.python_type)
-        object.__setattr__(self, "field_def", left.field_def)
-        object.__setattr__(self, "pika_field", left.pika_field)
-        object.__setattr__(self, "_left", left)
-        object.__setattr__(self, "_op", op)
-        object.__setattr__(self, "_right", right)
+    @staticmethod
+    def of(left: Field[Any], op: str, right: Any, alias: str | None = None) -> "_ArithField":
+        return _ArithField(
+            left.column_name, left.python_type, left.field_def, left.pika_field,
+            left, op, right, alias,
+        )
 
     def aliased(self, alias: str) -> "Field[Any]":
-        new = _ArithField(self._left, self._op, self._right)
-        object.__setattr__(new, "_alias", alias)
-        return new
+        left: Field[Any] = self._left
+        return _ArithField.of(left, self._op, self._right, alias)
 
     def to_column(self, params: list[Any], dialect: Any) -> Any:
-        left_term = self._left.to_column(params, dialect)
+        left: Field[Any] = self._left
+        left_term = left.to_column(params, dialect)
         right = self._right
         op = self._op
         if isinstance(right, Field):
@@ -266,27 +262,24 @@ class _ArithField(Field[Any]):
         ops: dict[str, Any] = {"+": left_term + right_term, "-": left_term - right_term,
                                "*": left_term * right_term, "/": left_term / right_term}
         result = ops[op]
-        alias = getattr(self, "_alias", None)
-        if alias:
-            return result.as_(alias)
+        if self._alias:
+            return result.as_(self._alias)
         return result
 
 
 
-class _AggField(Field[T]):
+class _AggField(Field[T], frozen=True, eq=False):
     """A Field backed by a pypika aggregate (or scalar) term."""
 
-    def __init__(self, python_type: type[T], pika_term: pypika.terms.Term) -> None:
-        object.__setattr__(self, "column_name", "")
-        object.__setattr__(self, "python_type", python_type)
-        object.__setattr__(self, "field_def", FieldDef())
-        object.__setattr__(self, "pika_field", pika_term)
+    @staticmethod
+    def of(python_type: type[_U], pika_term: pypika.terms.Term) -> "_AggField[_U]":
+        return _AggField("", python_type, FieldDef(), cast(pypika.Field, pika_term))
 
     def to_column(self, params: list[Any], dialect: Any) -> Any:
         return self.pika_field
 
     def aliased(self, alias: str) -> Field[T]:
-        return _AggField(self.python_type, self.pika_field.as_(alias))
+        return _AggField.of(self.python_type, self.pika_field.as_(alias))
 
     def over(self, *partition_by: "Field[Any]") -> "WindowSpec":
         fn_name = getattr(self.pika_field, "name", "").upper()
@@ -296,36 +289,31 @@ class _AggField(Field[T]):
         return WindowSpec(analytic_fn, partition_by, ())
 
 
-class _CoalesceField(Field[T]):
+class _CoalesceField(Field[T], frozen=True, eq=False):
     """COALESCE(col, default) — default is bound as a parameter at build time."""
 
-    _source: Field[T]
-    _default: Any
+    _source: Any = None        # a Field[T]; see note on _ArithField._left
+    _default: Any = None
+    _alias: str | None = None
 
-    def __init__(self, source: Field[T], default: Any) -> None:
-        object.__setattr__(self, "column_name", source.column_name)
-        object.__setattr__(self, "python_type", source.python_type)
-        object.__setattr__(self, "field_def", source.field_def)
-        object.__setattr__(self, "pika_field", source.pika_field)
-        object.__setattr__(self, "_source", source)
-        object.__setattr__(self, "_default", default)
+    @staticmethod
+    def of(source: Field[_U], default: Any, alias: str | None = None) -> "_CoalesceField[_U]":
+        return _CoalesceField(
+            source.column_name, source.python_type, source.field_def,
+            source.pika_field, source, default, alias,
+        )
 
     def aliased(self, alias: str) -> Field[T]:
-        source: Field[T] = object.__getattribute__(self, "_source")
-        default: Any = object.__getattribute__(self, "_default")
-        new = _CoalesceField(source, default)
-        object.__setattr__(new, "_alias", alias)
-        return new
+        source: Field[T] = self._source
+        return _CoalesceField.of(source, self._default, alias)
 
     def to_column(self, params: list[Any], dialect: Any) -> Any:
-        default: Any = object.__getattribute__(self, "_default")
-        source: Field[Any] = object.__getattribute__(self, "_source")
-        params.append(default)
+        source: Field[Any] = self._source
+        params.append(self._default)
         default_term = pypika.terms.Parameter(dialect.placeholder(len(params)))
         term = pypika.functions.Coalesce(source.pika_field, default_term)
-        alias = getattr(self, "_alias", None)
-        if alias:
-            return term.as_(alias)
+        if self._alias:
+            return term.as_(self._alias)
         return term
 
 
@@ -338,17 +326,17 @@ _ANALYTIC_FN_MAP: dict[str, type] = {
 }
 
 
-class _SortedField(Field[T]):
+class _SortedField(Field[T], frozen=True, eq=False):
     """A Field annotated with a sort direction; produced by Field.desc() / Field.asc()."""
 
-    descending: bool
+    descending: bool = False
 
-    def __init__(self, source: "Field[T]", descending: bool) -> None:
-        object.__setattr__(self, "column_name", source.column_name)
-        object.__setattr__(self, "python_type", source.python_type)
-        object.__setattr__(self, "field_def", source.field_def)
-        object.__setattr__(self, "pika_field", source.pika_field)
-        object.__setattr__(self, "descending", descending)
+    @staticmethod
+    def of(source: "Field[_U]", descending: bool) -> "_SortedField[_U]":
+        return _SortedField(
+            source.column_name, source.python_type, source.field_def,
+            source.pika_field, descending,
+        )
 
 
 class WindowSpec:
@@ -376,7 +364,7 @@ class WindowSpec:
                 term = term.orderby(f.pika_field, order=order)
             else:
                 term = term.orderby(f.pika_field)
-        return _AggField(type(None), term.as_(alias))
+        return _AggField.of(type(None), term.as_(alias))
 
 
 class _RawTerm(pypika.terms.Term):
@@ -405,30 +393,28 @@ class _ExcludedTerm(pypika.terms.Term):
 
 def excluded(proxy: "Field[T]") -> "Field[T]":
     """Clone a FieldProxy that renders as EXCLUDED."column" in ON CONFLICT DO UPDATE."""
-    new: Field[T] = Field.__new__(type(proxy))
-    object.__setattr__(new, "column_name", proxy.column_name)
-    object.__setattr__(new, "python_type", proxy.python_type)
-    object.__setattr__(new, "field_def", proxy.field_def)
-    object.__setattr__(new, "pika_field", _ExcludedTerm(proxy.column_name))
-    return new
+    return type(proxy)(
+        proxy.column_name, proxy.python_type, proxy.field_def,
+        cast(pypika.Field, _ExcludedTerm(proxy.column_name)),
+    )
 
 
 Column = Field  # alias
 
 
-class PrimaryKey(Field[T]):
+class PrimaryKey(Field[T], frozen=True, eq=False):
     pass
 
 
-class Unique(Field[T]):
+class Unique(Field[T], frozen=True, eq=False):
     pass
 
 
-class Index(Field[T]):
+class Index(Field[T], frozen=True, eq=False):
     pass
 
 
-class ForeignKey(Field[T]):
+class ForeignKey(Field[T], frozen=True, eq=False):
     pass
 
 
@@ -653,203 +639,275 @@ class Entity(metaclass=D2Meta):
 
     @classmethod
     def aliased(cls, alias: str) -> type[typing.Any]:
-        """Return a renamed view of this entity.
+        """Return this table under another name, for a self-join.
 
-        On a plain entity (no query state): creates a real table alias for self-joins.
-        On a query chain (has columns or union): creates a subquery/CTE alias.
+        Naming a *query* is :meth:`Query.aliased`, which is a different job: it
+        turns a query into a relation. That used to be this method's other half,
+        reached when the entity carried query state -- but a query is no longer
+        a subclass of its entity, so nothing arrives here with columns on it.
         """
         alias_table = pypika.Table(alias)
-        union_left = getattr(cls, "__union_left__", None)
-        has_query = union_left is not None or bool(getattr(cls, "__columns__", ()))
-
         ns: dict[str, Any] = {"__table__": alias_table, "__fields__": ()}
         for key in _QUERY_STATE_KEYS:
             ns[key] = _DEFAULTS[key]
         ns["__alias__"] = alias
+        ns["__inner__"] = None
 
-        if has_query:
-            # Subquery / CTE alias: store the original as __inner__ and remap projected columns
-            ns["__inner__"] = cls
-            if union_left is not None:
-                source_cols: tuple[Field[Any], ...] = (
-                    getattr(union_left, "__columns__", ()) or getattr(union_left, "__fields__", ())
-                )
-            else:
-                source_cols = cls.__columns__
-            new_fields: list[Field[Any]] = []
-            for col in source_cols:
-                col_alias = getattr(col.pika_field, "alias", None)
-                name: str = col_alias or col.column_name
-                if not name:
-                    continue
-                pika = NamespacedField(name, table=alias_table)
-                proxy = Field(name, col.python_type, col.field_def, pika)
-                ns[name] = proxy
-                new_fields.append(proxy)
-            ns["__fields__"] = tuple(new_fields)
-        else:
-            # Real table alias: remap all field proxies to use the aliased pika table
-            orig_table = cls.__table__
-            real_name: str = getattr(orig_table, "_table_name", "")
-            schema_obj: Any = getattr(orig_table, "_schema", None)
-            pika_table = pypika.Table(real_name, schema=schema_obj).as_(alias)
-            ns["__table__"] = pika_table
-            ns["__inner__"] = None
-            new_fields = []
-            for attr, val in vars(cls).items():
-                if isinstance(val, Field):
-                    fval = cast(Field[Any], val)
-                    new_pika = NamespacedField(fval.column_name, table=pika_table)
-                    new_proxy: Field[Any] = type(fval)(fval.column_name, fval.python_type, fval.field_def, new_pika)
-                    ns[attr] = new_proxy
-                    new_fields.append(new_proxy)
-            ns["__fields__"] = tuple(new_fields)
+        orig_table = cls.__table__
+        real_name: str = getattr(orig_table, "_table_name", "")
+        schema_obj: Any = getattr(orig_table, "_schema", None)
+        pika_table = pypika.Table(real_name, schema=schema_obj).as_(alias)
+        ns["__table__"] = pika_table
+        new_fields: list[Field[Any]] = []
+        for attr, val in vars(cls).items():
+            if isinstance(val, Field):
+                fval = cast(Field[Any], val)
+                new_pika = NamespacedField(fval.column_name, table=pika_table)
+                new_proxy: Field[Any] = type(fval)(fval.column_name, fval.python_type, fval.field_def, new_pika)
+                ns[attr] = new_proxy
+                new_fields.append(new_proxy)
+        ns["__fields__"] = tuple(new_fields)
 
         return cast(type[Self], D2Meta(cls.__name__, (cls,), ns))
 
 
-class Selectable(Entity):
-    """Mixin that adds SELECT and query-building capability. Inherit via Table or View."""
+class Query(msgspec.Struct, frozen=True):
+    """A query under construction: which entity, and what has been said about it.
 
-    @classmethod
-    def select(cls, *proxies: Field[Any]) -> "type[Self]":
-        q = cls.clone()
-        q.__columns__ = proxies
-        return q
+    Query state used to live in eighteen dunders on a *subclass* of the entity,
+    so every builder step called ``Entity.clone()`` and built a whole new Python
+    class through :class:`D2Meta`. Three quarters of a step's cost was
+    ``type.__new__`` alone, and because ``clone()`` passed ``bases=(cls,)`` each
+    step subclassed the one before it -- the MRO grew with the chain, so the
+    eighth ``.where()`` on a twenty-field table cost half again what the first
+    one did.
 
-    @classmethod
-    def select_all(cls) -> type[Self]:
-        q = cls.clone()
-        q.__columns__ = cls.__fields__
-        return q
+    Holding the state beside the entity rather than on a copy of it makes a step
+    one ``msgspec.structs.replace``: about fifty times cheaper, and flat in the
+    length of the chain. The entity is carried by reference, so the ``Field``
+    proxies that used to be re-copied on every step never move at all.
 
-    @classmethod
-    def where(cls, filter: Filter) -> type[Self]:
-        q = cls.clone()
-        q.__filters__ = cls.__filters__ + (filter,)
-        return q
+    The dunder spellings survive as read-only properties, because an aliased
+    relation is still a class (see :meth:`aliased`) and the same call sites read
+    both -- a join target, a CTE body, a prefetch child. Inside this class the
+    plain field is used; the properties are for everyone else.
+    """
 
-    @classmethod
-    def order_by(cls, *fields: Field[Any], desc: bool = False) -> type[Self]:
-        q = cls.clone()
+    entity: Any
+    columns: tuple[Field[Any], ...] = ()
+    filters: tuple[AnyFilter, ...] = ()
+    orderings: tuple[tuple[Field[Any], bool], ...] = ()
+    row_limit: int | None = None
+    row_offset: int | None = None
+    is_distinct: bool = False
+    joins: tuple[JoinClause, ...] = ()
+    group_bys: tuple[Field[Any], ...] = ()
+    havings: tuple[AnyFilter, ...] = ()
+    alias: str | None = None
+    inner: Any = None
+    union_left: Any = None
+    union_right: Any = None
+    set_op: str = ""
+    ctes: tuple[Any, ...] = ()
+    recursive: bool = False
+    prefetches: tuple[Any, ...] = ()
+    as_json: JsonMode | None = None
+
+    # -- the dunder spellings, for call sites that also see alias classes -----
+
+    @property
+    def __table__(self) -> pypika.Table:
+        return cast(pypika.Table, self.entity.__table__)
+
+    @property
+    def __fields__(self) -> tuple[Field[Any], ...]:
+        # A set operation reports the columns of its left arm: that is what
+        # `aliased()` remaps when a union is given a name.
+        if self.union_left is not None:
+            return self.union_left.__columns__ or self.union_left.__fields__
+        return self.columns or cast(tuple[Field[Any], ...], self.entity.__fields__)
+
+    @property
+    def __columns__(self) -> tuple[Field[Any], ...]:
+        return self.columns
+
+    @property
+    def __alias__(self) -> str | None:
+        return self.alias
+
+    @property
+    def __inner__(self) -> Any:
+        return self.inner
+
+    @property
+    def __union_left__(self) -> Any:
+        return self.union_left
+
+    @property
+    def __union_right__(self) -> Any:
+        return self.union_right
+
+    @property
+    def __set_op__(self) -> str:
+        return self.set_op
+
+    @property
+    def __row_limit__(self) -> int | None:
+        return self.row_limit
+
+    @property
+    def __row_offset__(self) -> int | None:
+        return self.row_offset
+
+    @property
+    def __as_json__(self) -> JsonMode | None:
+        return self.as_json
+
+    @property
+    def __filters__(self) -> tuple[AnyFilter, ...]:
+        return self.filters
+
+    @property
+    def __orderings__(self) -> tuple[tuple[Field[Any], bool], ...]:
+        return self.orderings
+
+    @property
+    def __joins__(self) -> tuple[JoinClause, ...]:
+        return self.joins
+
+    @property
+    def __group_bys__(self) -> tuple[Field[Any], ...]:
+        return self.group_bys
+
+    @property
+    def __havings__(self) -> tuple[AnyFilter, ...]:
+        return self.havings
+
+    @property
+    def __is_distinct__(self) -> bool:
+        return self.is_distinct
+
+    @property
+    def __ctes__(self) -> tuple[Any, ...]:
+        return self.ctes
+
+    @property
+    def __recursive__(self) -> bool:
+        return self.recursive
+
+    @property
+    def __prefetches__(self) -> tuple[Any, ...]:
+        return self.prefetches
+
+    # -- builder --------------------------------------------------------------
+
+    def select(self, *proxies: Field[Any]) -> "Query":
+        return msgspec.structs.replace(self, columns=proxies)
+
+    def select_all(self) -> "Query":
+        return msgspec.structs.replace(self, columns=self.entity.__fields__)
+
+    def where(self, filter: AnyFilter) -> "Query":
+        return msgspec.structs.replace(self, filters=self.filters + (filter,))
+
+    def order_by(self, *fields: Field[Any], desc: bool = False) -> "Query":
         orderings: list[tuple[Field[Any], bool]] = []
         for f in fields:
             is_desc = f.descending if isinstance(f, _SortedField) else desc
             orderings.append((f, is_desc))
-        q.__orderings__ = cls.__orderings__ + tuple(orderings)
-        return q
+        return msgspec.structs.replace(self, orderings=self.orderings + tuple(orderings))
 
-    @classmethod
-    def limit(cls, n: int) -> type[Self]:
-        q = cls.clone()
-        q.__row_limit__ = n
-        return q
+    def limit(self, n: int) -> "Query":
+        return msgspec.structs.replace(self, row_limit=n)
 
-    @classmethod
-    def offset(cls, n: int) -> type[Self]:
-        q = cls.clone()
-        q.__row_offset__ = n
-        return q
+    def offset(self, n: int) -> "Query":
+        return msgspec.structs.replace(self, row_offset=n)
 
-    @classmethod
-    def distinct(cls) -> type[Self]:
-        q = cls.clone()
-        q.__is_distinct__ = True
-        return q
+    def distinct(self) -> "Query":
+        return msgspec.structs.replace(self, is_distinct=True)
 
-    @classmethod
-    def join(cls, other: type[Selectable], *, on: AnyFilter) -> type[Self]:
-        from .query import JoinClause
+    def _join(self, other: Any, on: AnyFilter | None, kind: str) -> "Query":
         table = other if getattr(other, "__inner__", None) is not None else other.__table__
-        q = cls.clone()
-        q.__joins__ = cls.__joins__ + (JoinClause(table, on, "inner"),)
-        return q
+        return msgspec.structs.replace(self, joins=self.joins + (JoinClause(table, on, kind),))
 
-    @classmethod
-    def left_join(cls, other: type[Selectable], *, on: AnyFilter) -> type[Self]:
-        from .query import JoinClause
-        table = other if getattr(other, "__inner__", None) is not None else other.__table__
-        q = cls.clone()
-        q.__joins__ = cls.__joins__ + (JoinClause(table, on, "left"),)
-        return q
+    def join(self, other: Any, *, on: AnyFilter) -> "Query":
+        return self._join(other, on, "inner")
 
-    @classmethod
-    def right_join(cls, other: type[Selectable], *, on: AnyFilter) -> type[Self]:
-        from .query import JoinClause
-        table = other if getattr(other, "__inner__", None) is not None else other.__table__
-        q = cls.clone()
-        q.__joins__ = cls.__joins__ + (JoinClause(table, on, "right"),)
-        return q
+    def left_join(self, other: Any, *, on: AnyFilter) -> "Query":
+        return self._join(other, on, "left")
 
-    @classmethod
-    def cross_join(cls, other: type[Selectable]) -> type[Self]:
-        from .query import JoinClause
-        table = other if getattr(other, "__inner__", None) is not None else other.__table__
-        q = cls.clone()
-        q.__joins__ = cls.__joins__ + (JoinClause(table, None, "cross"),)
-        return q
+    def right_join(self, other: Any, *, on: AnyFilter) -> "Query":
+        return self._join(other, on, "right")
 
-    @classmethod
-    def group_by(cls, *proxies: Field[Any]) -> type[Self]:
-        q = cls.clone()
-        q.__group_bys__ = cls.__group_bys__ + proxies
-        return q
+    def cross_join(self, other: Any) -> "Query":
+        return self._join(other, None, "cross")
 
-    @classmethod
-    def having(cls, criterion: AnyFilter) -> type[Self]:
-        q = cls.clone()
-        q.__havings__ = cls.__havings__ + (criterion,)
-        return q
+    def group_by(self, *proxies: Field[Any]) -> "Query":
+        return msgspec.structs.replace(self, group_bys=self.group_bys + proxies)
 
-    @classmethod
-    def _make_set_op(cls, other: type[Selectable], op: str) -> type[Self]:
-        ns: dict[str, Any] = {
-            "__table__": cls.__table__,
-            "__fields__": getattr(cls, "__columns__", ()) or cls.__fields__,
-        }
+    def having(self, criterion: AnyFilter) -> "Query":
+        return msgspec.structs.replace(self, havings=self.havings + (criterion,))
+
+    def prefetch(self, *children: Any) -> "Query":
+        return msgspec.structs.replace(self, prefetches=self.prefetches + children)
+
+    def json(self, *, raw: bool = False) -> "Query":
+        return msgspec.structs.replace(self, as_json=JsonMode.RAW if raw else JsonMode.DECODED)
+
+    def as_scalar(self) -> Any:
+        from .query import ScalarSubquery
+
+        return ScalarSubquery(inner=self)
+
+    def _set_op(self, other: Any, op: str) -> "Query":
+        # Everything else resets: the operands carry their own state, and what
+        # is said after the operator (ORDER BY, LIMIT) applies to the result.
+        return Query(entity=self.entity, union_left=self, union_right=other, set_op=op)
+
+    def union(self, other: Any, *, all: bool = False) -> "Query":
+        return self._set_op(other, "UNION ALL" if all else "UNION")
+
+    def intersect(self, other: Any) -> "Query":
+        return self._set_op(other, "INTERSECT")
+
+    def exclude(self, other: Any) -> "Query":
+        return self._set_op(other, "EXCEPT")
+
+    def aliased(self, alias: str) -> type[Any]:
+        """Name this query so it can be joined to, or used as a CTE.
+
+        A class rather than another :class:`Query`, because the result is a
+        *relation* and not a query under construction: callers reach through it
+        for columns (``sub.total``), and a join target is detected by being a
+        type. Naming a query happens once per query, so the class construction
+        this costs is not on the builder's hot path.
+        """
+        alias_table = pypika.Table(alias)
+        ns: dict[str, Any] = {"__table__": alias_table, "__fields__": ()}
         for key in _QUERY_STATE_KEYS:
             ns[key] = _DEFAULTS[key]
-        ns["__union_left__"] = cls
-        ns["__union_right__"] = other
-        ns["__set_op__"] = op
-        for attr, val in vars(cls).items():
-            if isinstance(val, Field):
-                ns[attr] = val
-        return cast(type[Self], D2Meta(cls.__name__, (cls,), ns))
+        ns["__alias__"] = alias
+        ns["__inner__"] = self
 
-    @classmethod
-    def union(cls, other: type[Selectable], *, all: bool = False) -> type[Self]:
-        return cls._make_set_op(other, "UNION ALL" if all else "UNION")
+        source_cols = self.__fields__
+        new_fields: list[Field[Any]] = []
+        for col in source_cols:
+            col_alias = getattr(col.pika_field, "alias", None)
+            name: str = col_alias or col.column_name
+            if not name:
+                continue
+            pika = NamespacedField(name, table=alias_table)
+            proxy = Field(name, col.python_type, col.field_def, pika)
+            ns[name] = proxy
+            new_fields.append(proxy)
+        ns["__fields__"] = tuple(new_fields)
+        return cast(type[Any], D2Meta(self.entity.__name__, (self.entity,), ns))
 
-    @classmethod
-    def intersect(cls, other: type[Selectable]) -> type[Self]:
-        return cls._make_set_op(other, "INTERSECT")
+    # -- rendering ------------------------------------------------------------
 
-    @classmethod
-    def exclude(cls, other: type[Selectable]) -> type[Self]:
-        return cls._make_set_op(other, "EXCEPT")
-
-    @classmethod
-    def prefetch(cls, *children: "type[Any]") -> "type[Self]":
-        q = cls.clone()
-        q.__prefetches__ = cls.__prefetches__ + children
-        return q
-
-    @classmethod
-    def json(cls, *, raw: bool = False) -> "type[Self]":
-        q = cls.clone()
-        q.__as_json__ = JsonMode.RAW if raw else JsonMode.DECODED
-        return q
-
-    @classmethod
-    def as_scalar(cls) -> "Any":
-        from .query import ScalarSubquery
-        return ScalarSubquery(inner=cls)
-
-    @classmethod
-    def as_pypika(cls, params: list[Any], dialect: Dialect, cte_names: frozenset[str] = frozenset()) -> Any:
-        pika_cols = [col.to_column(params, dialect) for col in cls.__columns__]
-        for child in cls.__prefetches__:
+    def as_pypika(self, params: list[Any], dialect: Dialect, cte_names: frozenset[str] = frozenset()) -> Any:
+        pika_cols = [col.to_column(params, dialect) for col in self.columns]
+        for child in self.prefetches:
             alias: str = child.__alias__
             inner: Any = child.__inner__
             inner_pika = inner.as_pypika(params, dialect, cte_names)
@@ -859,74 +917,73 @@ class Selectable(Entity):
             else:
                 prefetch_sql = f"(SELECT COALESCE(json_agg(t),'[]'::json) FROM ({inner_sql}) t) AS \"{alias}\""
             pika_cols.append(_RawTerm(prefetch_sql))
-        q = pypika.Query.from_(cls.__table__).select(*pika_cols)
-        if cls.__is_distinct__:
+        q = pypika.Query.from_(self.entity.__table__).select(*pika_cols)
+        if self.is_distinct:
             q = q.distinct()
-        for jc in cls.__joins__:
+        for jc in self.joins:
             q = jc.apply_to(q, params, dialect, cte_names)
-        for f in cls.__filters__:
+        for f in self.filters:
             q = q.where(f.to_pypika(params, dialect))
-        for field, is_desc in cls.__orderings__:
+        for field, is_desc in self.orderings:
             order = pypika.enums.Order.desc if is_desc else pypika.enums.Order.asc
             q = q.orderby(field.pika_field, order=order)
-        for gb in cls.__group_bys__:
+        for gb in self.group_bys:
             q = q.groupby(gb.pika_field)
-        for h in cls.__havings__:
+        for h in self.havings:
             q = q.having(h.to_pypika(params, dialect))
-        if cls.__row_limit__ is not None:
-            q = q.limit(cls.__row_limit__)
-        if cls.__row_offset__ is not None:
-            q = q.offset(cls.__row_offset__)
+        if self.row_limit is not None:
+            q = q.limit(self.row_limit)
+        if self.row_offset is not None:
+            q = q.offset(self.row_offset)
         return q
 
-    @classmethod
-    def _build_set_op(cls, params: list[Any], dialect: Dialect) -> str:
-        left_sql = cls.__union_left__.as_pypika(params, dialect).get_sql(quote_char='"')
-        right_sql = cls.__union_right__.as_pypika(params, dialect).get_sql(quote_char='"')
-        sql = f"({left_sql}) {cls.__set_op__} ({right_sql})"
-        if cls.__orderings__:
+    def _build_set_op(self, params: list[Any], dialect: Dialect) -> str:
+        left_sql = self.union_left.as_pypika(params, dialect).get_sql(quote_char='"')
+        right_sql = self.union_right.as_pypika(params, dialect).get_sql(quote_char='"')
+        sql = f"({left_sql}) {self.set_op} ({right_sql})"
+        if self.orderings:
             parts: list[str] = []
-            for f, is_desc in cls.__orderings__:
+            for f, is_desc in self.orderings:
                 direction = "DESC" if is_desc else "ASC"
                 parts.append(f'"{f.column_name}" {direction}')
             sql += " ORDER BY " + ", ".join(parts)
-        if cls.__row_limit__ is not None:
-            sql += f" LIMIT {cls.__row_limit__}"
-        if cls.__row_offset__ is not None:
-            sql += f" OFFSET {cls.__row_offset__}"
+        if self.row_limit is not None:
+            sql += f" LIMIT {self.row_limit}"
+        if self.row_offset is not None:
+            sql += f" OFFSET {self.row_offset}"
         return sql
 
-    @classmethod
-    def build(cls, dialect: Dialect = PostgresDialect()) -> tuple[str, tuple[Any, ...]]:
-        if cls.__ctes__:
-            return cls._build_with(dialect)
+    def build(self, dialect: Dialect = PostgresDialect()) -> tuple[str, tuple[Any, ...]]:
+        if self.ctes:
+            return self._build_with(dialect)
         params: list[Any] = []
-        if cls.__as_json__ is not None and cls.__alias__ is not None and cls.__inner__ is not None:
+        if self.as_json is not None and self.alias is not None and self.inner is not None:
             # .aliased("x").json(): wrap inner query in json_build_object(alias, json_agg(...))
-            inner = cls.__inner__
+            inner = self.inner
             if getattr(inner, "__union_left__", None) is not None:
                 inner_sql = inner._build_set_op(params, dialect)
             else:
                 inner_sql = inner.as_pypika(params, dialect).get_sql(quote_char='"')
-            alias = cls.__alias__
-            cast = "::text" if cls.__as_json__ is JsonMode.RAW else ""
-            sql = f"SELECT json_build_object('{alias}',COALESCE(json_agg(t),'[]'::json)){cast} FROM ({inner_sql}) t"
+            cast_to = "::text" if self.as_json is JsonMode.RAW else ""
+            sql = (
+                f"SELECT json_build_object('{self.alias}',COALESCE(json_agg(t),'[]'::json))"
+                f"{cast_to} FROM ({inner_sql}) t"
+            )
             return sql, tuple(params)
-        if cls.__union_left__ is not None:
-            sql = cls._build_set_op(params, dialect)
+        if self.union_left is not None:
+            sql = self._build_set_op(params, dialect)
         else:
-            sql = cls.as_pypika(params, dialect).get_sql(quote_char='"')
-        if cls.__as_json__ is not None:
-            cast = "::text" if cls.__as_json__ is JsonMode.RAW else ""
-            sql = f"SELECT row_to_json(t){cast} FROM ({sql}) t"
+            sql = self.as_pypika(params, dialect).get_sql(quote_char='"')
+        if self.as_json is not None:
+            cast_to = "::text" if self.as_json is JsonMode.RAW else ""
+            sql = f"SELECT row_to_json(t){cast_to} FROM ({sql}) t"
         return sql, tuple(params)
 
-    @classmethod
-    def _build_with(cls, dialect: Dialect = PostgresDialect()) -> tuple[str, tuple[Any, ...]]:
+    def _build_with(self, dialect: Dialect = PostgresDialect()) -> tuple[str, tuple[Any, ...]]:
         params: list[Any] = []
-        cte_names = frozenset(v.__alias__ for v in cls.__ctes__)
+        cte_names = frozenset(v.__alias__ for v in self.ctes)
         cte_parts: list[str] = []
-        for view in cls.__ctes__:
+        for view in self.ctes:
             inner = view.__inner__
             union_left = getattr(inner, "__union_left__", None)
             if union_left is not None:
@@ -937,9 +994,108 @@ class Selectable(Entity):
             else:
                 body_sql = inner.as_pypika(params, dialect, cte_names).get_sql(quote_char='"')
             cte_parts.append(f'"{view.__alias__}" AS ({body_sql})')
-        main_sql = cls.as_pypika(params, dialect, cte_names).get_sql(quote_char='"')
-        prefix = "WITH RECURSIVE " if cls.__recursive__ else "WITH "
+        main_sql = self.as_pypika(params, dialect, cte_names).get_sql(quote_char='"')
+        prefix = "WITH RECURSIVE " if self.recursive else "WITH "
         return prefix + ", ".join(cte_parts) + " " + main_sql, tuple(params)
+
+
+class Selectable(Entity):
+    """Mixin that adds SELECT and query-building capability. Inherit via Table or View.
+
+    Each method here only *starts* a query -- it hands the entity to a
+    :class:`Query` and lets that carry the chain from there.
+    """
+
+    @classmethod
+    def _query(cls) -> Query:
+        # `aliased()` hands back a class carrying __alias__/__inner__, and the
+        # builder may be picked up again from there -- `.aliased("x").json()` is
+        # one query, not two -- so a query started on one keeps them.
+        return Query(entity=cls, alias=cls.__alias__, inner=cls.__inner__)
+
+    @classmethod
+    def select(cls, *proxies: Field[Any]) -> Query:
+        return cls._query().select(*proxies)
+
+    @classmethod
+    def select_all(cls) -> Query:
+        return cls._query().select_all()
+
+    @classmethod
+    def where(cls, filter: AnyFilter) -> Query:
+        return cls._query().where(filter)
+
+    @classmethod
+    def order_by(cls, *fields: Field[Any], desc: bool = False) -> Query:
+        return cls._query().order_by(*fields, desc=desc)
+
+    @classmethod
+    def limit(cls, n: int) -> Query:
+        return cls._query().limit(n)
+
+    @classmethod
+    def offset(cls, n: int) -> Query:
+        return cls._query().offset(n)
+
+    @classmethod
+    def distinct(cls) -> Query:
+        return cls._query().distinct()
+
+    @classmethod
+    def join(cls, other: Any, *, on: AnyFilter) -> Query:
+        return cls._query().join(other, on=on)
+
+    @classmethod
+    def left_join(cls, other: Any, *, on: AnyFilter) -> Query:
+        return cls._query().left_join(other, on=on)
+
+    @classmethod
+    def right_join(cls, other: Any, *, on: AnyFilter) -> Query:
+        return cls._query().right_join(other, on=on)
+
+    @classmethod
+    def cross_join(cls, other: Any) -> Query:
+        return cls._query().cross_join(other)
+
+    @classmethod
+    def group_by(cls, *proxies: Field[Any]) -> Query:
+        return cls._query().group_by(*proxies)
+
+    @classmethod
+    def having(cls, criterion: AnyFilter) -> Query:
+        return cls._query().having(criterion)
+
+    @classmethod
+    def union(cls, other: Any, *, all: bool = False) -> Query:
+        return cls._query().union(other, all=all)
+
+    @classmethod
+    def intersect(cls, other: Any) -> Query:
+        return cls._query().intersect(other)
+
+    @classmethod
+    def exclude(cls, other: Any) -> Query:
+        return cls._query().exclude(other)
+
+    @classmethod
+    def prefetch(cls, *children: Any) -> Query:
+        return cls._query().prefetch(*children)
+
+    @classmethod
+    def json(cls, *, raw: bool = False) -> Query:
+        return cls._query().json(raw=raw)
+
+    @classmethod
+    def as_scalar(cls) -> Any:
+        return cls._query().as_scalar()
+
+    @classmethod
+    def as_pypika(cls, params: list[Any], dialect: Dialect, cte_names: frozenset[str] = frozenset()) -> Any:
+        return cls._query().as_pypika(params, dialect, cte_names)
+
+    @classmethod
+    def build(cls, dialect: Dialect = PostgresDialect()) -> tuple[str, tuple[Any, ...]]:
+        return cls._query().build(dialect)
 
 
 class Writable(Entity):

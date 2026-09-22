@@ -1,0 +1,29 @@
+name: CI
+
+# Type checking runs here rather than in the Docs workflow, which gates the
+# site on its doctests. Same invocation as the pre-commit hook, so a local
+# commit and a PR check agree.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v8.3.2
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run pyright d2/
